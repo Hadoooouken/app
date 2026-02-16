@@ -130,6 +130,19 @@ body {
   z-index: 10;
 }
 
+/* чтобы цифры/подписи не выделялись при drag */
+.workspace,
+.workspace * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* чтобы тач не превращался в скролл/выделение */
+.workspace {
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* =========================
    TABLET 768+
 ========================= */

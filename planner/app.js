@@ -139,6 +139,8 @@ document.getElementById('zoom-reset')?.addEventListener('click', () => {
 // -------- init interactions --------
 initViewport(draw)
 initPointer(draw, { newWallId })
+window.addEventListener('planner:changed', rerender)
+
 
 // ---------------- SELECT: move + resize ----------------
 function getWallById(id) {
