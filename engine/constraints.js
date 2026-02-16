@@ -1,5 +1,5 @@
 // engine/constraints.js
-import { state } from './state.js'
+import { state, CLEAR_FROM_CAPITAL } from './state.js'
 
 const EPS = 1e-9
 
@@ -15,17 +15,15 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
         toAxis = true,
         toCapital = true,
         toNormals = true, // T-стык к normal сегментам
-        tGuard = 0.08,    // не липнуть к самым концам normal
+        tGuard = 0.08, // не липнуть к самым концам normal
     } = opts
 
-    const scale = Math.max(0.0001, state.view.scale)
+    const scale = Math.max(1e-6, state.view.scale)
     const snapWorld = snapPx / scale
     const axisWorld = axisPx / scale
 
     let best = { ...p }
     let bestDist = Infinity
-
-    // отметим, что реально "прилипли"
     let snapped = false
 
     const consider = (q) => {
@@ -56,27 +54,23 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
         if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: p.x, y: fromPoint.y })
     }
 
-    // 4) T-стык: проекция на normal сегменты
+    // 4) T-стык: проекция на normal сегменты (только внутренняя часть)
     if (toNormals) {
-        const hit = snapPointToNormalSegments(best, {
-            tolWorld: snapWorld,
-            guardT: tGuard,
-        })
+        const hit = snapPointToNormalSegments(best, { tolWorld: snapWorld, guardT: tGuard })
         if (hit) {
             best = hit
             snapped = true
         }
     }
 
-    // 5) дотяжка к капитальным (пересечение отрезка fromPoint->best с кап. стенами)
-// 5) дотяжка к капитальным (проекция на ближайший капитальный сегмент)
-if (toCapital) {
-  const hit = snapPointToCapitalSegments(best, snapWorld)
-  if (hit) {
-    best = hit
-    snapped = true
-  }
-}
+    // 5) прилипаем к капитальным — ПРОЕКЦИЯ на ближайший capital сегмент
+    if (toCapital) {
+        const hit = snapPointToCapitalSegments(best, snapWorld)
+        if (hit) {
+            best = hit
+            snapped = true
+        }
+    }
 
     // snap pulse для рендера
     state.ui = state.ui || {}
@@ -147,6 +141,38 @@ function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
     return best
 }
 
+// ---------------- SNAP TO CAPITAL SEGMENTS (projection) ----------------
+
+function projectPointToSegmentClamped(p, a, b) {
+    const abx = b.x - a.x, aby = b.y - a.y
+    const apx = p.x - a.x, apy = p.y - a.y
+    const ab2 = abx * abx + aby * aby
+    if (ab2 < EPS) return { point: { ...a }, t: 0 }
+
+    let t = (apx * abx + apy * aby) / ab2
+    t = Math.max(0, Math.min(1, t))
+    return { point: { x: a.x + abx * t, y: a.y + aby * t }, t }
+}
+
+function snapPointToCapitalSegments(p, tolWorld) {
+    const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+    if (!caps.length) return null
+
+    let best = null
+    let bestD = Infinity
+
+    for (const c of caps) {
+        const pr = projectPointToSegmentClamped(p, c.a, c.b)
+        const d = Math.hypot(p.x - pr.point.x, p.y - pr.point.y)
+        if (d <= tolWorld && d < bestD) {
+            bestD = d
+            best = pr.point
+        }
+    }
+
+    return best
+}
+
 // ---------------- LIMITS + NO X-INTERSECTIONS ----------------
 
 let cachedKey = ''
@@ -154,7 +180,7 @@ let cachedPoly = null
 
 /**
  * Проверка:
- * 1) сегмент внутри полигона капитальных
+ * 1) сегмент внутри полигона капитальных (включая границу)
  * 2) сегмент НЕ делает X-пересечений с normal стенами
  *
  * opts:
@@ -164,21 +190,27 @@ let cachedPoly = null
 export function isSegmentAllowed(a, b, opts = {}) {
     const { ignoreWallId = null, tolPx = 2 } = opts
 
-    // 1) внутри капитального контура (если он есть)
+    const scale = Math.max(1e-6, state.view.scale)
+
+    // 1) внутри капитального контура (если он есть) — ВАЖНО: граница тоже ок
     const poly = getCapitalPolygon()
     if (poly && poly.length >= 3) {
-        if (!pointInPoly(a, poly) || !pointInPoly(b, poly)) return false
+        const boundaryTolWorld = tolPx / scale
 
+        if (!pointInPolyInclusive(a, poly, boundaryTolWorld)) return false
+        if (!pointInPolyInclusive(b, poly, boundaryTolWorld)) return false
+
+        // проверим несколько точек внутри сегмента
         const steps = 24
         for (let i = 1; i < steps; i++) {
             const t = i / steps
             const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-            if (!pointInPoly(p, poly)) return false
+            if (!pointInPolyInclusive(p, poly, boundaryTolWorld)) return false
         }
     }
 
     // 2) запрет X-пересечений (normal-normal)
-    const tolWorld = tolPx / Math.max(1e-6, state.view.scale)
+    const tolWorld = tolPx / scale
 
     for (const w of (state.walls || [])) {
         if (!w) continue
@@ -206,6 +238,40 @@ export function isSegmentAllowed(a, b, opts = {}) {
     return true
 }
 
+// ✅ запрет “утопить” normal в capital: проверяем, что внутренняя часть сегмента
+// держится минимум на clearWorld от капитальных сегментов.
+// (концы мы допускаем близко/на капитальной — там у нас trim)
+export function isSegmentClearOfCapitals(a, b, clearWorld = CLEAR_FROM_CAPITAL, opts = {}) {
+    const { endGuard = 0.06, samples = 24 } = opts
+    const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+    if (!caps.length) return true
+
+    // если clearWorld <= 0 — нечего проверять
+    if (!Number.isFinite(clearWorld) || clearWorld <= 0) return true
+
+    for (let i = 0; i <= samples; i++) {
+        const t = i / samples
+
+        // не проверяем около концов (иначе нельзя будет "пристыковать")
+        if (t <= endGuard || t >= (1 - endGuard)) continue
+
+        const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+
+        // расстояние до ближайшей capital оси
+        let bestD = Infinity
+        for (const c of caps) {
+            const pr = projectPointToSegmentClamped(p, c.a, c.b)
+            const d = Math.hypot(p.x - pr.point.x, p.y - pr.point.y)
+            if (d < bestD) bestD = d
+        }
+
+        // если внутренняя часть сегмента зашла слишком близко к капитальной оси — запрещаем
+        if (bestD < clearWorld) return false
+    }
+
+    return true
+}
+
 function tolT(tolWorld, a, b) {
     const L = Math.hypot(b.x - a.x, b.y - a.y)
     if (L < EPS) return 1
@@ -213,7 +279,7 @@ function tolT(tolWorld, a, b) {
 }
 
 function getCapitalPolygon() {
-    const caps = (state.walls || []).filter(w => w.kind === 'capital')
+    const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
     if (caps.length < 3) return null
 
     const key = caps.map(w => `${w.a.x},${w.a.y}-${w.b.x},${w.b.y}`).join('|')
@@ -228,29 +294,40 @@ function getCapitalPolygon() {
 function buildLoopFromSegments(segments) {
     const map = new Map()
     const k = (p) => `${p.x}:${p.y}`
+
     const add = (p, q) => {
         const key = k(p)
         if (!map.has(key)) map.set(key, { p, n: [] })
         map.get(key).n.push(q)
     }
-    for (const s of segments) { add(s.a, s.b); add(s.b, s.a) }
+
+    for (const s of segments) {
+        add(s.a, s.b)
+        add(s.b, s.a)
+    }
 
     const first = segments[0].a
     const firstK = k(first)
-    const loop = [first]
+
+    const loop = [{ ...first }]
     let curr = first
     let prev = null
 
     for (let guard = 0; guard < 5000; guard++) {
         const node = map.get(k(curr))
         if (!node) return null
+
+        // выбираем соседа, который не "назад"
         const next = node.n.find(x => !prev || x.x !== prev.x || x.y !== prev.y)
         if (!next) return null
+
         prev = curr
         curr = next
+
         if (k(curr) === firstK) break
-        loop.push(curr)
+        loop.push({ ...curr })
     }
+
     return loop
 }
 
@@ -270,38 +347,33 @@ function fallbackBBoxPoly(segments) {
     ]
 }
 
-function pointInPoly(p, poly) {
+// ✅ IMPORTANT: "внутри" включая границу (это фикс правой/нижней стен)
+function pointInPolyInclusive(p, poly, tolWorld) {
+    const tol2 = tolWorld * tolWorld
+
+    // 1) если точка на ребре — считаем внутри
+    for (let i = 0; i < poly.length; i++) {
+        const a = poly[i]
+        const b = poly[(i + 1) % poly.length]
+        const pr = projectPointToSegmentClamped(p, a, b)
+        const dx = p.x - pr.point.x
+        const dy = p.y - pr.point.y
+        if ((dx * dx + dy * dy) <= tol2) return true
+    }
+
+    // 2) ray casting
     let inside = false
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
         const xi = poly[i].x, yi = poly[i].y
         const xj = poly[j].x, yj = poly[j].y
+
         const intersect =
             ((yi > p.y) !== (yj > p.y)) &&
-            (p.x < (xj - xi) * (p.y - yi) / (Math.max(1e-9, (yj - yi))) + xi)
+            (p.x <= ((xj - xi) * (p.y - yi)) / Math.max(1e-12, (yj - yi)) + xi)
+
         if (intersect) inside = !inside
     }
     return inside
-}
-
-// ---------------- SNAP TO CAPITAL (segment end) ----------------
-
-function snapSegmentEndToCapital(a, b, tolWorld) {
-    const caps = (state.walls || []).filter(w => w.kind === 'capital')
-    if (!caps.length) return null
-
-    let best = null
-    let bestDist = Infinity
-
-    for (const w of caps) {
-        const p = segmentIntersectionPoint(a, b, w.a, w.b)
-        if (!p) continue
-        const d = dist(b, p)
-        if (d <= tolWorld && d < bestDist) {
-            best = p
-            bestDist = d
-        }
-    }
-    return best
 }
 
 // ---------------- SEGMENT INTERSECTION HELPERS ----------------
@@ -346,68 +418,9 @@ function segmentIntersectionParams(a, b, c, d) {
     return null
 }
 
-function segmentIntersectionPoint(a, b, c, d) {
-    const hit = segmentIntersectionParams(a, b, c, d)
-    return hit && hit.type === 'point' ? hit.p : null
-}
-
 function cross(v, w) {
     return v.x * w.y - v.y * w.x
 }
 function dot(ax, ay, bx, by) {
     return ax * bx + ay * by
-}
-
-function projectPointToSegmentClamped(p, a, b) {
-  const abx = b.x - a.x, aby = b.y - a.y
-  const apx = p.x - a.x, apy = p.y - a.y
-  const ab2 = abx * abx + aby * aby
-  if (ab2 < EPS) return { point: { ...a }, t: 0 }
-
-  let t = (apx * abx + apy * aby) / ab2
-  t = Math.max(0, Math.min(1, t))
-  return { point: { x: a.x + abx * t, y: a.y + aby * t }, t }
-}
-
-function snapPointToCapitalSegments(p, tolWorld) {
-  const caps = (state.walls || []).filter(w => w.kind === 'capital')
-  if (!caps.length) return null
-
-  let best = null
-  let bestD = Infinity
-
-  for (const c of caps) {
-    const pr = projectPointToSegmentClamped(p, c.a, c.b)
-    const d = Math.hypot(p.x - pr.point.x, p.y - pr.point.y)
-    if (d <= tolWorld && d < bestD) {
-      bestD = d
-      best = pr.point
-    }
-  }
-
-  return best
-}
-
-export function minDistPointToCapitals(p) {
-  const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
-  if (!caps.length) return Infinity
-
-  let best = Infinity
-  for (const c of caps) {
-    const pr = projectPointToSegmentClamped(p, c.a, c.b)
-    const d = Math.hypot(p.x - pr.point.x, p.y - pr.point.y)
-    if (d < best) best = d
-  }
-  return best
-}
-
-// true если сегмент НЕ залезает в толщину капитальных стен
-export function isSegmentClearOfCapitals(a, b, clearWorld, samples = 16) {
-  // проверяем несколько точек по сегменту
-  for (let i = 0; i <= samples; i++) {
-    const t = i / samples
-    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-    if (minDistPointToCapitals(p) < clearWorld) return false
-  }
-  return true
 }

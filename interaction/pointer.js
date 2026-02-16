@@ -1,5 +1,5 @@
 // interaction/pointer.js
-import { state } from '../engine/state.js'
+import { state, GRID_STEP_SNAP  } from '../engine/state.js'
 import { render } from '../renderer/render.js'
 import { screenToWorld } from '../renderer/svg.js'
 import { smartSnapPoint, isSegmentAllowed } from '../engine/constraints.js'
@@ -66,7 +66,7 @@ export function initPointer(draw, { newWallId } = {}) {
         const raw = screenToWorld(draw, e.clientX, e.clientY)
 
         const p = smartSnapPoint(raw, firstPoint, {
-            grid: 50,
+            grid: GRID_STEP_SNAP ,
             snapPx: 22,
             axisPx: 14,
             toGrid: true,
