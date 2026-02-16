@@ -33,7 +33,7 @@ function trimWallToCapitals(wall) {
     if (!caps.length) return wall
 
     const scale = Math.max(1e-6, state.view.scale)
-    const tolWorld = 22 / scale
+    const tolWorld = 22 / scale // примерно как snapPx
     const trimLen = CAP_W / 2 + NOR_W / 2 - OVERLAP
 
     const snapTrimEnd = (end, other) => {
@@ -54,11 +54,13 @@ function trimWallToCapitals(wall) {
 
 export function initPointer(draw, { newWallId } = {}) {
     let firstPoint = null
-    let activePointerId = null
 
-    // ✅ КЛЮЧЕВО для мобилки: полностью выключаем системные жесты на svg
-    // иначе pointermove может не приходить.
-    draw.node.style.touchAction = 'none'
+    const cancelDrawing = () => {
+        firstPoint = null
+        state.previewWall = null
+        state.snapPoint = null
+        render(draw)
+    }
 
     function snappedFromEvent(e) {
         const raw = screenToWorld(draw, e.clientX, e.clientY)
@@ -79,13 +81,15 @@ export function initPointer(draw, { newWallId } = {}) {
         return p
     }
 
+    // ✅ pointermove — работает и для mouse, и для touch
     draw.node.addEventListener('pointermove', (e) => {
         if (state.mode !== 'draw-wall') return
-        if (activePointerId !== null && e.pointerId !== activePointerId) return
+        if (e.pointerType === 'touch') e.preventDefault?.()
 
         const p = snappedFromEvent(e)
 
         if (!firstPoint) {
+            // просто показываем снап-точку/пульс, без пунктирки
             state.previewWall = null
             render(draw)
             return
@@ -96,60 +100,58 @@ export function initPointer(draw, { newWallId } = {}) {
         render(draw)
     }, { passive: false })
 
+    // ✅ pointerdown вместо click, чтобы на мобилке работало одинаково
     draw.node.addEventListener('pointerdown', (e) => {
         if (state.mode !== 'draw-wall') return
         if (e.button !== 0 && e.pointerType === 'mouse') return
-
-        // ✅ захватываем указатель -> move будет приходить стабильно
-        activePointerId = e.pointerId
-        draw.node.setPointerCapture?.(e.pointerId)
+        if (e.pointerType === 'touch') e.preventDefault?.()
 
         const p = snappedFromEvent(e)
 
         // 1-я точка
         if (!firstPoint) {
+            // если стартовая точка уже "нельзя" — просто не начинаем
+            if (!isSegmentAllowed(p, p)) {
+                cancelDrawing()
+                return
+            }
+
             firstPoint = p
             state.previewWall = { a: firstPoint, b: p, ok: true }
             render(draw)
             return
         }
 
-        // 2-я точка
+        // 2-я точка: если нельзя — ОТМЕНЯЕМ рисование как Esc ✅
         if (!isSegmentAllowed(firstPoint, p)) {
-            state.previewWall = { a: firstPoint, b: p, ok: false }
-            render(draw)
+            cancelDrawing()
             return
         }
 
+        // можно — создаём стену
         const id = (typeof newWallId === 'function') ? newWallId() : `u${Date.now()}`
         const newWall = { id, a: { ...firstPoint }, b: { ...p }, kind: 'normal' }
 
-        // ✅ подрезка к капитальным
+        // подрезка к капитальным
         trimWallToCapitals(newWall)
+
+        // финальная проверка после подрезки (на всякий)
+        if (!isSegmentAllowed(newWall.a, newWall.b)) {
+            cancelDrawing()
+            return
+        }
 
         state.walls.push(newWall)
 
+        // сброс состояния рисования
         firstPoint = null
         state.previewWall = null
         state.snapPoint = null
         render(draw)
     }, { passive: false })
 
-    const stop = (e) => {
-        if (activePointerId !== null) {
-            try { draw.node.releasePointerCapture?.(activePointerId) } catch { }
-        }
-        activePointerId = null
-    }
-
-    draw.node.addEventListener('pointerup', stop, { passive: true })
-    draw.node.addEventListener('pointercancel', stop, { passive: true })
-
     window.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return
-        firstPoint = null
-        state.previewWall = null
-        state.snapPoint = null
-        render(draw)
+        cancelDrawing()
     })
 }

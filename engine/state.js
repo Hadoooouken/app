@@ -9,10 +9,10 @@ export const state = {
   snapPoint: null,
 }
 
-export const UNIT = 'cm'
-export const UNITS_PER_M = 100      // 100 cm = 1 m
-export const UNITS_PER_CM = 1       // 1 unit = 1 cm
 
+export const UNITS_PER_M = 100      // 100 cm = 1 m
+export const GRID_STEP_VIEW = 100   // шаг визуальной сетки (1 м)
+export const GRID_STEP_SNAP = 25    // шаг магнита (25 см)
 
 
 function wid() {

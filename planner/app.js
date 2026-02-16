@@ -1,5 +1,5 @@
 // planner/app.js
-import { state } from '../engine/state.js'
+import { state, GRID_STEP_SNAP } from '../engine/state.js'
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
 import { loadStudioTemplate } from './templates.js'
@@ -122,11 +122,10 @@ document.getElementById('zoom-out')?.addEventListener('click', () => {
     rerender()
 })
 document.getElementById('zoom-reset')?.addEventListener('click', () => {
-    state.view.scale = 1
-    state.view.offsetX = 0
-    state.view.offsetY = 0
+    fitToWalls(draw, { padding: 240, maxScale: 1.1 })
     rerender()
 })
+
 
 // -------- init interactions --------
 initViewport(draw)
@@ -181,7 +180,7 @@ function applyEdit(mouseWorld) {
     }
 
     const snapOpts = {
-        grid: 50,
+        grid: GRID_STEP_SNAP,
         snapPx: 14,
         axisPx: 10,
         toGrid: true,

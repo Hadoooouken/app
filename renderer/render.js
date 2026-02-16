@@ -1,5 +1,5 @@
 // renderer/render.js
-import { state, UNITS_PER_M } from '../engine/state.js'
+import { state, UNITS_PER_M, GRID_STEP_VIEW  } from '../engine/state.js'
 import { wallLengthUnits } from '../engine/metrics.js'
 
 const CAP_W = 28
@@ -125,7 +125,7 @@ export function render(draw) {
 
   // GRID
   const grid = scene.group().id('grid')
-  const step = 100
+  const step = GRID_STEP_VIEW
   const size = 8000
   for (let x = -size; x <= size; x += step) {
     grid.line(x, -size, x, size).stroke({ width: 1, color: '#e3dfd7' })
