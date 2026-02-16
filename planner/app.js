@@ -1,12 +1,24 @@
 // planner/app.js
-import { state, GRID_STEP_SNAP } from '../engine/state.js'
+import {
+    state,
+    GRID_STEP_SNAP,
+    CLEAR_FROM_CAPITAL,
+    CAP_W,
+    NOR_W,
+    OVERLAP,
+} from '../engine/state.js'
+
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
 import { loadStudioTemplate } from './templates.js'
 import { initViewport } from '../interaction/viewport.js'
 import { initPointer } from '../interaction/pointer.js'
 import { pickNormalWallAt, pickWallHandleAt } from '../engine/pick.js'
-import { smartSnapPoint, isSegmentAllowed } from '../engine/constraints.js'
+import {
+    smartSnapPoint,
+    isSegmentAllowed,
+    isSegmentClearOfCapitals,
+} from '../engine/constraints.js'
 
 // ✅ метрики
 import {
@@ -156,12 +168,6 @@ function stopEdit() {
 }
 
 /* ------------------ SNAP + TRIM TO CAPITALS (for edit) ------------------ */
-/* ВАЖНО: дожимаем к капитальным так же, как при рисовании (trim),
-   иначе будут “зазоры” сверху/справа из-за толщины стен. */
-
-const CAP_W = 28
-const NOR_W = 10
-const OVERLAP = 5
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
@@ -210,7 +216,7 @@ function snapTrimEndToCapital(end, otherEnd, snapPx = 22) {
     const hit = nearestPointOnCapitals(end)
     if (!hit || hit.d > tolWorld) return null
 
-    const trimLen = CAP_W / 2 + NOR_W / 2 - OVERLAP
+    const trimLen = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
     return trimPointBack(otherEnd, hit.point, trimLen)
 }
 
@@ -275,7 +281,7 @@ function applyEdit(mouseWorld) {
             y: movedA.y + (ed.startB.y - ed.startA.y),
         }
 
-        // 3) ✅ дожим всей стены к капитальным С ПОДРЕЗКОЙ
+        // 3) дожим всей стены к капитальным + подрезка
         const snapped = snapWholeSegmentToCapital(movedA, movedB, 22)
         newA = snapped.a
         newB = snapped.b
@@ -285,7 +291,6 @@ function applyEdit(mouseWorld) {
         newA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
         newA = smartSnapPoint(newA, newB, snapOpts)
 
-        // ✅ после smartSnapPoint дожимаем к капитальным тем же trim
         const t = snapTrimEndToCapital(newA, newB, 22)
         if (t) newA = t
     }
@@ -297,6 +302,10 @@ function applyEdit(mouseWorld) {
         const t = snapTrimEndToCapital(newB, newA, 22)
         if (t) newB = t
     }
+
+    // ✅ ВАЖНО: запрет “утопить” normal внутрь капитальной
+    // (ставим после того, как точки посчитаны!)
+    if (!isSegmentClearOfCapitals(newA, newB, CLEAR_FROM_CAPITAL)) return
 
     if (!isSegmentAllowed(newA, newB, { ignoreWallId: ed.id })) return
 
@@ -311,7 +320,10 @@ draw.node.addEventListener('pointerdown', (e) => {
 
     const p = screenToWorld(draw, e.clientX, e.clientY)
 
-    const h = typeof pickWallHandleAt === 'function' ? pickWallHandleAt(p, { tolPx: 14 }) : null
+    const h = typeof pickWallHandleAt === 'function'
+        ? pickWallHandleAt(p, { tolPx: 14 })
+        : null
+
     if (h) {
         state.selectedWallId = h.id
         startEdit(h.handle, h.id, p) // 'a'/'b'

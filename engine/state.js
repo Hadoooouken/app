@@ -15,6 +15,17 @@ export const GRID_STEP_VIEW = 100   // шаг визуальной сетки (1
 export const GRID_STEP_SNAP = 25    // шаг магнита (25 см)
 
 
+
+// толщины (в world units)
+export const CAP_W = 28
+export const NOR_W = 10
+export const OVERLAP = 5
+
+// насколько normal должен держаться “внутри” от оси капитальной,
+// чтобы визуально не залезать в её толщину
+export const CLEAR_FROM_CAPITAL = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
+
+
 function wid() {
   return crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)
 }

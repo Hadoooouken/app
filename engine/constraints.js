@@ -387,3 +387,27 @@ function snapPointToCapitalSegments(p, tolWorld) {
 
   return best
 }
+
+export function minDistPointToCapitals(p) {
+  const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+  if (!caps.length) return Infinity
+
+  let best = Infinity
+  for (const c of caps) {
+    const pr = projectPointToSegmentClamped(p, c.a, c.b)
+    const d = Math.hypot(p.x - pr.point.x, p.y - pr.point.y)
+    if (d < best) best = d
+  }
+  return best
+}
+
+// true если сегмент НЕ залезает в толщину капитальных стен
+export function isSegmentClearOfCapitals(a, b, clearWorld, samples = 16) {
+  // проверяем несколько точек по сегменту
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples
+    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+    if (minDistPointToCapitals(p) < clearWorld) return false
+  }
+  return true
+}
