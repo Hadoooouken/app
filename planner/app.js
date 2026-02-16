@@ -44,6 +44,31 @@ const btnTrash = document.getElementById('btn-trash')
 const hint = document.getElementById('hint')
 const status = document.getElementById('status')
 
+function updateDeleteButtonState() {
+    if (!btnTrash) return
+
+    const sel = state.selectedWallId
+    const isSelectMode = state.mode === 'select'
+
+    if (!isSelectMode || !sel) {
+        btnTrash.classList.add('is-disabled')
+        btnTrash.classList.remove('is-danger')
+        return
+    }
+
+    const w = state.walls.find(w => w.id === sel)
+
+    if (!w || w.kind === 'capital') {
+        btnTrash.classList.add('is-disabled')
+        btnTrash.classList.remove('is-danger')
+        return
+    }
+
+    btnTrash.classList.remove('is-disabled')
+    btnTrash.classList.add('is-danger')
+}
+
+
 // ---------------- status metrics ----------------
 function updateStatus() {
     if (!status) return
@@ -68,6 +93,7 @@ function updateStatus() {
 function rerender() {
     render(draw)
     updateStatus()
+    updateDeleteButtonState()
 }
 
 // -------- mode helpers --------

@@ -30,6 +30,18 @@ body {
   overflow: hidden;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+#workspace {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* на рабочую область и UI вокруг неё */
+
 /* WORKSPACE */
 .workspace {
   position: fixed;
@@ -143,6 +155,33 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+#workspace,
+.workspace,
+.panel,
+.zoom {
+  touch-action: manipulation; /* отключает double-tap zoom, оставляет скролл где он есть */
+}
+
+.tool.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tool.is-danger {
+  background: #ff3b30;
+  color: #fff;
+}
+
+.tool.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tool.is-danger {
+  background: #ff3b30;
+  color: #fff;
+}
+
 /* =========================
    TABLET 768+
 ========================= */
@@ -252,14 +291,4 @@ body {
   .status {
     font-size: 15px;
   }
-}
-
-html,
-body {
-  height: 100%;
-  overflow: hidden;
-}
-#workspace {
-  width: 100vw;
-  height: 100vh;
 }
