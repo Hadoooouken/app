@@ -22,7 +22,6 @@ const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
 
 // -------- id generator for user walls --------
-// (чтобы не словить коллизии при перезагрузках шаблонов)
 let wallAutoId = 10000
 const newWallId = () => `u${Date.now()}_${wallAutoId++}`
 
@@ -34,7 +33,6 @@ const hint = document.getElementById('hint')
 const status = document.getElementById('status')
 
 // ---------------- status metrics ----------------
-
 function updateStatus() {
     if (!status) return
 
@@ -49,8 +47,7 @@ function updateStatus() {
 
     if (sel) {
         const len = wallLengthM(sel)
-        status.textContent =
-            `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+        status.textContent = `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
     } else {
         status.textContent = `Select | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
     }
@@ -88,7 +85,9 @@ function syncUI() {
 }
 
 btnSelect?.addEventListener('click', () => setMode('select'))
-btnWall?.addEventListener('click', () => setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall'))
+btnWall?.addEventListener('click', () =>
+    setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall')
+)
 
 // -------- delete selected --------
 function deleteSelectedWall() {
@@ -134,7 +133,6 @@ initViewport(draw)
 initPointer(draw, { newWallId })
 
 // ---------------- SELECT: move + resize ----------------
-
 function getWallById(id) {
     return (state.walls || []).find(w => w.id === id) || null
 }
@@ -197,7 +195,6 @@ function applyEdit(mouseWorld) {
     if (ed.kind === 'b') newB = smartSnapPoint(newB, newA, snapOpts)
 
     if (ed.kind === 'move') {
-        // при переносе — “ездим ровно” по сетке (без прилипания к стенам)
         newA = smartSnapPoint(newA, null, {
             ...snapOpts,
             toAxis: false,
@@ -210,7 +207,6 @@ function applyEdit(mouseWorld) {
         }
     }
 
-    // ✅ важно: при редактировании игнорим пересечение с самой собой
     if (!isSegmentAllowed(newA, newB, { ignoreWallId: ed.id })) return
 
     w.a = newA
@@ -224,16 +220,14 @@ draw.node.addEventListener('pointerdown', (e) => {
 
     const p = screenToWorld(draw, e.clientX, e.clientY)
 
-    // 1) ручки
     const h = typeof pickWallHandleAt === 'function' ? pickWallHandleAt(p, { tolPx: 14 }) : null
     if (h) {
         state.selectedWallId = h.id
-        startEdit(h.handle, h.id, p) // 'a'/'b'
+        startEdit(h.handle, h.id, p)
         rerender()
         return
     }
 
-    // 2) сегмент — перенос
     const id = pickNormalWallAt(p, { tolPx: 16 })
     if (id) {
         state.selectedWallId = id
@@ -242,7 +236,6 @@ draw.node.addEventListener('pointerdown', (e) => {
         return
     }
 
-    // 3) пустота — снять выделение (пан сделает viewport)
     state.selectedWallId = null
     rerender()
 })

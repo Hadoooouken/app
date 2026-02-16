@@ -25,7 +25,7 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     let best = { ...p }
     let bestDist = Infinity
 
-    // ✅ отметим, что реально "прилипли"
+    // отметим, что реально "прилипли"
     let snapped = false
 
     const consider = (q) => {
@@ -36,7 +36,6 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
             snapped = true
         }
     }
-
 
     // 1) grid
     if (toGrid && grid > 0) {
@@ -63,18 +62,23 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
             tolWorld: snapWorld,
             guardT: tGuard,
         })
-        if (hit) best = hit
+        if (hit) {
+            best = hit
+            snapped = true
+        }
     }
 
-    // 5) дотяжка к капитальным (пересечение луча a->b с кап. стенами)
+    // 5) дотяжка к капитальным (пересечение отрезка fromPoint->best с кап. стенами)
     if (toCapital && fromPoint) {
         const hit = snapSegmentEndToCapital(fromPoint, best, snapWorld)
-        if (hit) best = hit
+        if (hit) {
+            best = hit
+            snapped = true
+        }
     }
 
-    // ✅ snap pulse для рендера
+    // snap pulse для рендера
     state.ui = state.ui || {}
-
     if (snapped) {
         state.ui.snapPulse = {
             x: best.x,
@@ -82,10 +86,8 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
             t: (typeof performance !== 'undefined' ? performance.now() : Date.now()),
         }
     } else {
-        // можно не сбрасывать, но так проще чтобы не висел
         state.ui.snapPulse = null
     }
-
 
     return best
 }
@@ -93,6 +95,7 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
 function collectSnapPoints() {
     const pts = []
     for (const w of (state.walls || [])) {
+        if (!w) continue
         pts.push(w.a, w.b)
     }
     return pts
@@ -120,6 +123,7 @@ function projectPointToSegment(p, a, b) {
     return { point: q, t, d }
 }
 
+// вернуть point если в радиусе и НЕ около концов, иначе null
 function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
     let best = null
     let bestD = Infinity
@@ -138,6 +142,7 @@ function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
             best = pr.point
         }
     }
+
     return best
 }
 
@@ -153,12 +158,12 @@ let cachedPoly = null
  *
  * opts:
  *  - ignoreWallId: не проверять пересечения с этой стеной (при переносе/ресайзе)
- *  - tolPx: “толщина” допуска в пикселях (переведём в world через scale)
+ *  - tolPx: “толщина” допуска в пикселях (переводим в world через scale)
  */
 export function isSegmentAllowed(a, b, opts = {}) {
     const { ignoreWallId = null, tolPx = 2 } = opts
 
-    // 1) внутри капитального контура
+    // 1) внутри капитального контура (если он есть)
     const poly = getCapitalPolygon()
     if (poly && poly.length >= 3) {
         if (!pointInPoly(a, poly) || !pointInPoly(b, poly)) return false
@@ -179,38 +184,27 @@ export function isSegmentAllowed(a, b, opts = {}) {
         if (w.kind === 'capital') continue
         if (ignoreWallId && w.id === ignoreWallId) continue
 
-        // если у текущей стены нет id, всё равно можно проверять геометрию
         const hit = segmentIntersectionParams(a, b, w.a, w.b)
         if (!hit) continue
 
-        // коллинеарное наложение — тоже запретим (кроме касания в точке)
+        // коллинеарное наложение — запретим, если оно "заметное"
         if (hit.type === 'overlap') {
             if (hit.overlapLen > tolWorld) return false
             continue
         }
 
-        // обычное пересечение: X только если пересечение "внутри" обоих сегментов
-        const { t, u, p } = hit
+        const { t, u } = hit
 
-        // допускаем если пересечение пришло “в самый конец” хотя бы одного сегмента:
-        // - L: конец-конец
-        // - T: конец в середину
-        const tIsEnd = (t <= 0 + tolT(tolWorld, a, b) || t >= 1 - tolT(tolWorld, a, b))
-        const uIsEnd = (u <= 0 + tolT(tolWorld, w.a, w.b) || u >= 1 - tolT(tolWorld, w.a, w.b))
+        const tIsEnd = (t <= tolT(tolWorld, a, b) || t >= 1 - tolT(tolWorld, a, b))
+        const uIsEnd = (u <= tolT(tolWorld, w.a, w.b) || u >= 1 - tolT(tolWorld, w.a, w.b))
 
-        // Если НЕ конец ни там ни там => это X (запрещаем)
+        // если пересеклись “внутри-внутри” => X (запрещаем)
         if (!tIsEnd && !uIsEnd) return false
-
-        // Дополнительно: если точка пересечения очень близко к концам по расстоянию — это ок
-        // (чуть подстраховываемся от численных ошибок)
-        // иначе уже обработали выше.
-        void p
     }
 
     return true
 }
 
-// сколько t соответствует tolWorld (переводим world-допуск в долю длины сегмента)
 function tolT(tolWorld, a, b) {
     const L = Math.hypot(b.x - a.x, b.y - a.y)
     if (L < EPS) return 1
@@ -226,7 +220,7 @@ function getCapitalPolygon() {
     cachedKey = key
 
     const poly = buildLoopFromSegments(caps)
-    cachedPoly = poly && poly.length >= 3 ? poly : fallbackBBoxPoly(caps)
+    cachedPoly = (poly && poly.length >= 3) ? poly : fallbackBBoxPoly(caps)
     return cachedPoly
 }
 
@@ -311,10 +305,7 @@ function snapSegmentEndToCapital(a, b, tolWorld) {
 
 // ---------------- SEGMENT INTERSECTION HELPERS ----------------
 
-// Возвращает:
-// - null (нет пересечения)
-// - { type:'point', t, u, p } (пересекаются в точке)
-// - { type:'overlap', overlapLen } (коллинеарное наложение)
+// null | {type:'point', t,u,p} | {type:'overlap', overlapLen}
 function segmentIntersectionParams(a, b, c, d) {
     const r = { x: b.x - a.x, y: b.y - a.y }
     const s = { x: d.x - c.x, y: d.y - c.y }
@@ -327,7 +318,6 @@ function segmentIntersectionParams(a, b, c, d) {
         // не коллинеарны
         if (Math.abs(cross(ca, r)) > 1e-9) return null
 
-        // коллинеарны -> проверим наложение по параметру t на a->b
         const rr = r.x * r.x + r.y * r.y
         if (rr < EPS) return null
 
@@ -339,7 +329,6 @@ function segmentIntersectionParams(a, b, c, d) {
         if (hi < lo) return null
 
         const overlapLen = Math.hypot(r.x, r.y) * (hi - lo)
-        // если пересечение только в точке (касание концами) — считаем ок как “нет”
         if (overlapLen < 1e-9) return null
 
         return { type: 'overlap', overlapLen }
@@ -356,7 +345,6 @@ function segmentIntersectionParams(a, b, c, d) {
     return null
 }
 
-// точка пересечения (только если пересеклись)
 function segmentIntersectionPoint(a, b, c, d) {
     const hit = segmentIntersectionParams(a, b, c, d)
     return hit && hit.type === 'point' ? hit.p : null
