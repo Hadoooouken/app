@@ -25,13 +25,18 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     let best = { ...p }
     let bestDist = Infinity
 
+    // ✅ отметим, что реально "прилипли"
+    let snapped = false
+
     const consider = (q) => {
         const d = dist(p, q)
         if (d < bestDist && d <= snapWorld) {
             best = { ...q }
             bestDist = d
+            snapped = true
         }
     }
+
 
     // 1) grid
     if (toGrid && grid > 0) {
@@ -66,6 +71,21 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
         const hit = snapSegmentEndToCapital(fromPoint, best, snapWorld)
         if (hit) best = hit
     }
+
+    // ✅ snap pulse для рендера
+    state.ui = state.ui || {}
+
+    if (snapped) {
+        state.ui.snapPulse = {
+            x: best.x,
+            y: best.y,
+            t: (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+        }
+    } else {
+        // можно не сбрасывать, но так проще чтобы не висел
+        state.ui.snapPulse = null
+    }
+
 
     return best
 }

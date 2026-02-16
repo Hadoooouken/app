@@ -8,7 +8,7 @@ import { initPointer } from '../interaction/pointer.js'
 import { pickNormalWallAt, pickWallHandleAt } from '../engine/pick.js'
 import { smartSnapPoint, isSegmentAllowed } from '../engine/constraints.js'
 
-// ✅ НОВОЕ: метрики
+// ✅ метрики
 import {
     getSelectedWall,
     wallLengthM,
@@ -22,8 +22,9 @@ const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
 
 // -------- id generator for user walls --------
+// (чтобы не словить коллизии при перезагрузках шаблонов)
 let wallAutoId = 10000
-const newWallId = () => `u${wallAutoId++}`
+const newWallId = () => `u${Date.now()}_${wallAutoId++}`
 
 // -------- UI refs --------
 const btnSelect = document.getElementById('btn-select')
@@ -31,6 +32,34 @@ const btnWall = document.getElementById('btn-wall')
 const btnTrash = document.getElementById('btn-trash')
 const hint = document.getElementById('hint')
 const status = document.getElementById('status')
+
+// ---------------- status metrics ----------------
+
+function updateStatus() {
+    if (!status) return
+
+    const area = capitalAreaM2()
+    const sum = totalNormalLengthM()
+    const sel = getSelectedWall()
+
+    if (state.mode === 'draw-wall') {
+        status.textContent = `Режим: Wall | Сумма стен: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+        return
+    }
+
+    if (sel) {
+        const len = wallLengthM(sel)
+        status.textContent =
+            `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+    } else {
+        status.textContent = `Select | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+    }
+}
+
+function rerender() {
+    render(draw)
+    updateStatus()
+}
 
 // -------- mode helpers --------
 function setMode(mode) {
@@ -41,8 +70,9 @@ function setMode(mode) {
     state.edit = null
     state.ui = state.ui || {}
     state.ui.lockPan = false
+
     syncUI()
-    render(draw)
+    rerender()
 }
 
 function syncUI() {
@@ -71,7 +101,7 @@ function deleteSelectedWall() {
 
     state.walls.splice(idx, 1)
     state.selectedWallId = null
-    render(draw)
+    rerender()
 }
 
 window.addEventListener('keydown', (e) => {
@@ -86,17 +116,17 @@ btnTrash?.addEventListener('click', deleteSelectedWall)
 // -------- zoom UI --------
 document.getElementById('zoom-in')?.addEventListener('click', () => {
     setZoomAtCenter(draw, Math.min(5, state.view.scale * 1.2))
-    render(draw)
+    rerender()
 })
 document.getElementById('zoom-out')?.addEventListener('click', () => {
     setZoomAtCenter(draw, Math.max(0.2, state.view.scale / 1.2))
-    render(draw)
+    rerender()
 })
 document.getElementById('zoom-reset')?.addEventListener('click', () => {
     state.view.scale = 1
     state.view.offsetX = 0
     state.view.offsetY = 0
-    render(draw)
+    rerender()
 })
 
 // -------- init interactions --------
@@ -165,13 +195,23 @@ function applyEdit(mouseWorld) {
 
     if (ed.kind === 'a') newA = smartSnapPoint(newA, newB, snapOpts)
     if (ed.kind === 'b') newB = smartSnapPoint(newB, newA, snapOpts)
+
     if (ed.kind === 'move') {
-        // при переносе — “ездим ровно” по сетке
-        newA = smartSnapPoint(newA, null, { ...snapOpts, toAxis: false, toCapital: false, toNormals: false })
-        newB = { x: newA.x + (ed.startB.x - ed.startA.x), y: newA.y + (ed.startB.y - ed.startA.y) }
+        // при переносе — “ездим ровно” по сетке (без прилипания к стенам)
+        newA = smartSnapPoint(newA, null, {
+            ...snapOpts,
+            toAxis: false,
+            toCapital: false,
+            toNormals: false,
+        })
+        newB = {
+            x: newA.x + (ed.startB.x - ed.startA.x),
+            y: newA.y + (ed.startB.y - ed.startA.y),
+        }
     }
 
-    if (!isSegmentAllowed(newA, newB)) return
+    // ✅ важно: при редактировании игнорим пересечение с самой собой
+    if (!isSegmentAllowed(newA, newB, { ignoreWallId: ed.id })) return
 
     w.a = newA
     w.b = newB
@@ -184,12 +224,12 @@ draw.node.addEventListener('pointerdown', (e) => {
 
     const p = screenToWorld(draw, e.clientX, e.clientY)
 
-    // 1) ручки (если pickWallHandleAt у тебя уже есть)
+    // 1) ручки
     const h = typeof pickWallHandleAt === 'function' ? pickWallHandleAt(p, { tolPx: 14 }) : null
     if (h) {
         state.selectedWallId = h.id
         startEdit(h.handle, h.id, p) // 'a'/'b'
-        render(draw)
+        rerender()
         return
     }
 
@@ -198,13 +238,13 @@ draw.node.addEventListener('pointerdown', (e) => {
     if (id) {
         state.selectedWallId = id
         startEdit('move', id, p)
-        render(draw)
+        rerender()
         return
     }
 
-    // 3) пустота — просто снять выделение (пан сделает viewport)
+    // 3) пустота — снять выделение (пан сделает viewport)
     state.selectedWallId = null
-    render(draw)
+    rerender()
 })
 
 draw.node.addEventListener('pointermove', (e) => {
@@ -212,48 +252,21 @@ draw.node.addEventListener('pointermove', (e) => {
     if (!state.edit) return
     const p = screenToWorld(draw, e.clientX, e.clientY)
     applyEdit(p)
-    render(draw)
+    rerender()
 })
 
 draw.node.addEventListener('pointerup', () => {
     if (state.mode !== 'select') return
     if (!state.edit) return
     stopEdit()
-    render(draw)
+    rerender()
 })
 
 draw.node.addEventListener('pointercancel', () => {
     if (!state.edit) return
     stopEdit()
-    render(draw)
+    rerender()
 })
-
-// ---------------- status metrics (обновляем регулярно) ----------------
-
-function updateStatus() {
-    if (!status) return
-
-    const area = capitalAreaM2()
-    const sum = totalNormalLengthM()
-    const sel = getSelectedWall()
-
-    if (state.mode === 'draw-wall') {
-        status.textContent = `Режим: Wall | Сумма стен: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
-        return
-    }
-
-    if (sel) {
-        const len = wallLengthM(sel)
-        status.textContent =
-            `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
-    } else {
-        status.textContent =
-            `Select | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
-    }
-}
-
-// чтобы не переписывать все render() в других модулях — просто пулим статус
-setInterval(updateStatus, 120)
 
 // -------- start --------
 syncUI()
@@ -261,8 +274,7 @@ loadStudioTemplate()
 
 requestAnimationFrame(() => {
     fitToWalls(draw, { padding: 240, maxScale: 1.1 })
-    render(draw)
-    updateStatus()
+    rerender()
 })
 
 // resize (один)
@@ -271,8 +283,9 @@ window.addEventListener('resize', () => {
     cancelAnimationFrame(raf)
     raf = requestAnimationFrame(() => {
         fitToWalls(draw, { padding: 240, maxScale: 1.1 })
-        render(draw)
-        updateStatus()
+        rerender()
     })
 })
+
+// удобно для дебага в консоли
 window.state = state
