@@ -69,13 +69,14 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     }
 
     // 5) дотяжка к капитальным (пересечение отрезка fromPoint->best с кап. стенами)
-    if (toCapital && fromPoint) {
-        const hit = snapSegmentEndToCapital(fromPoint, best, snapWorld)
-        if (hit) {
-            best = hit
-            snapped = true
-        }
-    }
+// 5) дотяжка к капитальным (проекция на ближайший капитальный сегмент)
+if (toCapital) {
+  const hit = snapPointToCapitalSegments(best, snapWorld)
+  if (hit) {
+    best = hit
+    snapped = true
+  }
+}
 
     // snap pulse для рендера
     state.ui = state.ui || {}
@@ -355,4 +356,34 @@ function cross(v, w) {
 }
 function dot(ax, ay, bx, by) {
     return ax * bx + ay * by
+}
+
+function projectPointToSegmentClamped(p, a, b) {
+  const abx = b.x - a.x, aby = b.y - a.y
+  const apx = p.x - a.x, apy = p.y - a.y
+  const ab2 = abx * abx + aby * aby
+  if (ab2 < EPS) return { point: { ...a }, t: 0 }
+
+  let t = (apx * abx + apy * aby) / ab2
+  t = Math.max(0, Math.min(1, t))
+  return { point: { x: a.x + abx * t, y: a.y + aby * t }, t }
+}
+
+function snapPointToCapitalSegments(p, tolWorld) {
+  const caps = (state.walls || []).filter(w => w.kind === 'capital')
+  if (!caps.length) return null
+
+  let best = null
+  let bestD = Infinity
+
+  for (const c of caps) {
+    const pr = projectPointToSegmentClamped(p, c.a, c.b)
+    const d = Math.hypot(p.x - pr.point.x, p.y - pr.point.y)
+    if (d <= tolWorld && d < bestD) {
+      bestD = d
+      best = pr.point
+    }
+  }
+
+  return best
 }

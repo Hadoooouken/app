@@ -85,9 +85,7 @@ function syncUI() {
 }
 
 btnSelect?.addEventListener('click', () => setMode('select'))
-btnWall?.addEventListener('click', () =>
-    setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall')
-)
+btnWall?.addEventListener('click', () => setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall'))
 
 // -------- delete selected --------
 function deleteSelectedWall() {
@@ -126,7 +124,6 @@ document.getElementById('zoom-reset')?.addEventListener('click', () => {
     rerender()
 })
 
-
 // -------- init interactions --------
 initViewport(draw)
 initPointer(draw, { newWallId })
@@ -158,6 +155,86 @@ function stopEdit() {
     state.ui.lockPan = false
 }
 
+/* ------------------ SNAP + TRIM TO CAPITALS (for edit) ------------------ */
+/* ВАЖНО: дожимаем к капитальным так же, как при рисовании (trim),
+   иначе будут “зазоры” сверху/справа из-за толщины стен. */
+
+const CAP_W = 28
+const NOR_W = 10
+const OVERLAP = 5
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+
+function projectPointToSegmentClamped(p, a, b) {
+    const abx = b.x - a.x, aby = b.y - a.y
+    const apx = p.x - a.x, apy = p.y - a.y
+    const ab2 = abx * abx + aby * aby
+
+    if (ab2 < 1e-9) {
+        const d = Math.hypot(p.x - a.x, p.y - a.y)
+        return { point: { ...a }, d }
+    }
+
+    let t = (apx * abx + apy * aby) / ab2
+    t = clamp(t, 0, 1)
+    const q = { x: a.x + abx * t, y: a.y + aby * t }
+    const d = Math.hypot(p.x - q.x, p.y - q.y)
+    return { point: q, d }
+}
+
+function trimPointBack(from, to, trimLen) {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    const len = Math.hypot(dx, dy) || 1
+    const ux = dx / len
+    const uy = dy / len
+    return { x: to.x - ux * trimLen, y: to.y - uy * trimLen }
+}
+
+function nearestPointOnCapitals(p) {
+    const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+    if (!caps.length) return null
+
+    let best = null
+    for (const c of caps) {
+        const pr = projectPointToSegmentClamped(p, c.a, c.b)
+        if (!best || pr.d < best.d) best = pr
+    }
+    return best // { point, d }
+}
+
+function snapTrimEndToCapital(end, otherEnd, snapPx = 22) {
+    const scale = Math.max(1e-6, state.view.scale)
+    const tolWorld = snapPx / scale
+
+    const hit = nearestPointOnCapitals(end)
+    if (!hit || hit.d > tolWorld) return null
+
+    const trimLen = CAP_W / 2 + NOR_W / 2 - OVERLAP
+    return trimPointBack(otherEnd, hit.point, trimLen)
+}
+
+function snapWholeSegmentToCapital(a, b, snapPx = 22) {
+    const aTrim = snapTrimEndToCapital(a, b, snapPx)
+    const bTrim = snapTrimEndToCapital(b, a, snapPx)
+    if (!aTrim && !bTrim) return { a, b }
+
+    const da = aTrim ? Math.hypot(aTrim.x - a.x, aTrim.y - a.y) : Infinity
+    const db = bTrim ? Math.hypot(bTrim.x - b.x, bTrim.y - b.y) : Infinity
+
+    const useA = da <= db
+    const target = useA ? aTrim : bTrim
+    const src = useA ? a : b
+
+    const dx = target.x - src.x
+    const dy = target.y - src.y
+
+    return {
+        a: { x: a.x + dx, y: a.y + dy },
+        b: { x: b.x + dx, y: b.y + dy },
+    }
+}
+
 function applyEdit(mouseWorld) {
     const ed = state.edit
     if (!ed) return
@@ -170,15 +247,6 @@ function applyEdit(mouseWorld) {
     let newA = { ...ed.startA }
     let newB = { ...ed.startB }
 
-    if (ed.kind === 'move') {
-        newA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
-        newB = { x: ed.startB.x + dx, y: ed.startB.y + dy }
-    } else if (ed.kind === 'a') {
-        newA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
-    } else if (ed.kind === 'b') {
-        newB = { x: ed.startB.x + dx, y: ed.startB.y + dy }
-    }
-
     const snapOpts = {
         grid: GRID_STEP_SNAP,
         snapPx: 14,
@@ -190,20 +258,44 @@ function applyEdit(mouseWorld) {
         toNormals: true,
     }
 
-    if (ed.kind === 'a') newA = smartSnapPoint(newA, newB, snapOpts)
-    if (ed.kind === 'b') newB = smartSnapPoint(newB, newA, snapOpts)
-
     if (ed.kind === 'move') {
-        newA = smartSnapPoint(newA, null, {
+        // 1) грубый перенос
+        let movedA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
+        let movedB = { x: ed.startB.x + dx, y: ed.startB.y + dy }
+
+        // 2) перенос по сетке (без прилипания к стенам)
+        movedA = smartSnapPoint(movedA, null, {
             ...snapOpts,
             toAxis: false,
             toCapital: false,
             toNormals: false,
         })
-        newB = {
-            x: newA.x + (ed.startB.x - ed.startA.x),
-            y: newA.y + (ed.startB.y - ed.startA.y),
+        movedB = {
+            x: movedA.x + (ed.startB.x - ed.startA.x),
+            y: movedA.y + (ed.startB.y - ed.startA.y),
         }
+
+        // 3) ✅ дожим всей стены к капитальным С ПОДРЕЗКОЙ
+        const snapped = snapWholeSegmentToCapital(movedA, movedB, 22)
+        newA = snapped.a
+        newB = snapped.b
+    }
+
+    if (ed.kind === 'a') {
+        newA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
+        newA = smartSnapPoint(newA, newB, snapOpts)
+
+        // ✅ после smartSnapPoint дожимаем к капитальным тем же trim
+        const t = snapTrimEndToCapital(newA, newB, 22)
+        if (t) newA = t
+    }
+
+    if (ed.kind === 'b') {
+        newB = { x: ed.startB.x + dx, y: ed.startB.y + dy }
+        newB = smartSnapPoint(newB, newA, snapOpts)
+
+        const t = snapTrimEndToCapital(newB, newA, 22)
+        if (t) newB = t
     }
 
     if (!isSegmentAllowed(newA, newB, { ignoreWallId: ed.id })) return
@@ -222,7 +314,7 @@ draw.node.addEventListener('pointerdown', (e) => {
     const h = typeof pickWallHandleAt === 'function' ? pickWallHandleAt(p, { tolPx: 14 }) : null
     if (h) {
         state.selectedWallId = h.id
-        startEdit(h.handle, h.id, p)
+        startEdit(h.handle, h.id, p) // 'a'/'b'
         rerender()
         return
     }
