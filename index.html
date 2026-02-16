@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Planner</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body class="app">
+  <div id="workspace" class="workspace"></div>
+
+  <!-- LEFT PANEL -->
+  <aside class="panel">
+    <div class="panel__title">Planner</div>
+
+    <button id="btn-select" class="tool is-active" type="button">
+      <span class="tool__icon">🖱️</span>
+      <span class="tool__label">Select</span>
+    </button>
+
+    <button id="btn-wall" class="tool" type="button">
+      <span class="tool__icon">🧱</span>
+      <span class="tool__label">Wall</span>
+    </button>
+    <button id="btn-trash" type="button" class="tool">🗑 Delete wall</button>
+
+
+    <div class="panel__divider"></div>
+
+    <div class="panel__hint" id="hint">
+      Select: просто смотри.
+    </div>
+  </aside>
+
+  <!-- RIGHT ZOOM -->
+  <div class="zoom">
+    <button class="zoom__btn" id="zoom-in" type="button">＋</button>
+    <button class="zoom__btn" id="zoom-out" type="button">−</button>
+    <button class="zoom__btn" id="zoom-reset" type="button">⦿</button>
+  </div>
+
+  <!-- BOTTOM INFO -->
+  <div class="status" id="status">Готово</div>
+
+  <script type="module" src="./planner/app.js"></script>
+</body>
+
+</html>

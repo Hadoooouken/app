@@ -1,0 +1,252 @@
+:root {
+  --bg: #f2eee5;
+  --panel: rgba(255, 255, 255, 0.92);
+  --stroke: rgba(0, 0, 0, 0.12);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  --accent: #0a84ff;
+  --text: #1f2937;
+  --muted: rgba(31, 41, 55, 0.65);
+  --radius: 16px;
+}
+
+/* RESET */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Arial,
+    sans-serif;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* WORKSPACE */
+.workspace {
+  position: fixed;
+  inset: 0;
+}
+
+/* =========================
+   PANEL (MOBILE BASE)
+========================= */
+
+.panel {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+.panel__title,
+.panel__hint {
+  display: none; /* на мобиле скрываем */
+}
+
+/* TOOL BUTTONS */
+
+.tool {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--stroke);
+  background: #fff;
+  cursor: pointer;
+  transition: 0.15s;
+  font-size: 14px;
+}
+
+.tool.is-active {
+  background: color-mix(in oklab, var(--accent), #fff 88%);
+  border-color: var(--accent);
+}
+
+.tool__label {
+  display: none; /* текст скрыт на маленьком */
+}
+
+/* =========================
+   ZOOM (mobile)
+========================= */
+
+.zoom {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+
+.zoom__btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--stroke);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+/* STATUS */
+
+.status {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  z-index: 10;
+}
+
+/* =========================
+   TABLET 768+
+========================= */
+
+@media (min-width: 768px) {
+  .panel {
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 420px;
+  }
+
+  .tool__label {
+    display: inline;
+  }
+
+  .status {
+    font-size: 13px;
+  }
+}
+
+/* =========================
+   LAPTOP 1024+
+========================= */
+
+@media (min-width: 1024px) {
+  .panel {
+    top: 24px;
+    bottom: auto;
+    left: 24px;
+    transform: none;
+    width: 240px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .panel__title {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .panel__hint {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .tool {
+    justify-content: flex-start;
+    padding: 12px 14px;
+  }
+
+  .zoom {
+    right: 24px;
+    bottom: 24px;
+    top: auto;
+  }
+
+  .status {
+    bottom: 24px;
+    top: auto;
+    font-size: 13px;
+  }
+}
+
+/* =========================
+   DESKTOP 1440+
+========================= */
+
+@media (min-width: 1440px) {
+  .panel {
+    width: 260px;
+    padding: 18px;
+  }
+
+  .tool {
+    padding: 14px 16px;
+    font-size: 15px;
+  }
+
+  .zoom__btn {
+    width: 50px;
+    height: 50px;
+    font-size: 20px;
+  }
+
+  .status {
+    font-size: 14px;
+  }
+}
+
+/* =========================
+   ULTRA WIDE 1920+
+========================= */
+
+@media (min-width: 1920px) {
+  .panel {
+    width: 280px;
+  }
+
+  .tool {
+    font-size: 16px;
+  }
+
+  .status {
+    font-size: 15px;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+#workspace {
+  width: 100vw;
+  height: 100vh;
+}
