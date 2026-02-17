@@ -1,16 +1,13 @@
 // interaction/pointer.js
-import { state, GRID_STEP_SNAP } from '../engine/state.js'
+import { state, GRID_STEP_SNAP, CAP_W, NOR_W, OVERLAP } from '../engine/state.js'
 import { render } from '../renderer/render.js'
 import { screenToWorld } from '../renderer/svg.js'
 import { smartSnapPoint, isSegmentAllowed } from '../engine/constraints.js'
 
-const CAP_W = 28
-const NOR_W = 10
-const OVERLAP = 5
-
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
 
+// ---------------- trim to capitals (как раньше) ----------------
 function nearestPointOnSeg(p, a, b) {
     const abx = b.x - a.x, aby = b.y - a.y
     const apx = p.x - a.x, apy = p.y - a.y
@@ -52,8 +49,14 @@ function trimWallToCapitals(wall) {
     return wall
 }
 
+// --------------------------------------------------------------
+
 export function initPointer(draw, { newWallId } = {}) {
     let firstPoint = null
+
+    // чтобы различать тап/драг на мобилке
+    let down = null
+    const TAP_THRESH_PX = 10
 
     const cancelDrawing = () => {
         firstPoint = null
@@ -66,7 +69,7 @@ export function initPointer(draw, { newWallId } = {}) {
         const raw = screenToWorld(draw, e.clientX, e.clientY)
 
         const p = smartSnapPoint(raw, firstPoint, {
-            grid: GRID_STEP_SNAP,
+            grid: GRID_STEP_SNAP, // ✅ 25см
             snapPx: 22,
             axisPx: 14,
             toGrid: true,
@@ -81,7 +84,7 @@ export function initPointer(draw, { newWallId } = {}) {
         return p
     }
 
-    // ✅ pointermove — работает и для mouse, и для touch
+    // ✅ превью линия (пунктир)
     draw.node.addEventListener('pointermove', (e) => {
         if (state.mode !== 'draw-wall') return
         if (e.pointerType === 'touch') e.preventDefault?.()
@@ -89,7 +92,6 @@ export function initPointer(draw, { newWallId } = {}) {
         const p = snappedFromEvent(e)
 
         if (!firstPoint) {
-            // просто показываем снап-точку/пульс, без пунктирки
             state.previewWall = null
             render(draw)
             return
@@ -100,29 +102,47 @@ export function initPointer(draw, { newWallId } = {}) {
         render(draw)
     }, { passive: false })
 
-    // ✅ pointerdown вместо click, чтобы на мобилке работало одинаково
+    // ✅ фикс: на мобилке “клик” делаем по pointerup
     draw.node.addEventListener('pointerdown', (e) => {
         if (state.mode !== 'draw-wall') return
         if (e.button !== 0 && e.pointerType === 'mouse') return
         if (e.pointerType === 'touch') e.preventDefault?.()
 
+        down = { x: e.clientX, y: e.clientY, id: e.pointerId }
+        draw.node.setPointerCapture?.(e.pointerId)
+    }, { passive: false })
+
+    draw.node.addEventListener('pointerup', (e) => {
+        if (state.mode !== 'draw-wall') return
+        if (e.button !== 0 && e.pointerType === 'mouse') return
+        if (e.pointerType === 'touch') e.preventDefault?.()
+
+        // если это был драг, а не тап — не ставим точки
+        if (down) {
+            const dx = e.clientX - down.x
+            const dy = e.clientY - down.y
+            if (Math.hypot(dx, dy) > TAP_THRESH_PX) {
+                down = null
+                return
+            }
+        }
+        down = null
+
         const p = snappedFromEvent(e)
 
         // 1-я точка
         if (!firstPoint) {
-            // если стартовая точка уже "нельзя" — просто не начинаем
             if (!isSegmentAllowed(p, p)) {
                 cancelDrawing()
                 return
             }
-
             firstPoint = p
             state.previewWall = { a: firstPoint, b: p, ok: true }
             render(draw)
             return
         }
 
-        // 2-я точка: если нельзя — ОТМЕНЯЕМ рисование как Esc ✅
+        // 2-я точка: если нельзя — отменяем как Esc ✅
         if (!isSegmentAllowed(firstPoint, p)) {
             cancelDrawing()
             return
@@ -132,24 +152,23 @@ export function initPointer(draw, { newWallId } = {}) {
         const id = (typeof newWallId === 'function') ? newWallId() : `u${Date.now()}`
         const newWall = { id, a: { ...firstPoint }, b: { ...p }, kind: 'normal' }
 
-        // подрезка к капитальным
         trimWallToCapitals(newWall)
 
-        // финальная проверка после подрезки (на всякий)
+        // финальная проверка
         if (!isSegmentAllowed(newWall.a, newWall.b)) {
             cancelDrawing()
             return
         }
 
         state.walls.push(newWall)
-        window.dispatchEvent(new Event('planner:changed'))
 
-        // сброс состояния рисования
         firstPoint = null
         state.previewWall = null
         state.snapPoint = null
         render(draw)
     }, { passive: false })
+
+    draw.node.addEventListener('pointercancel', () => cancelDrawing(), { passive: true })
 
     window.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return
