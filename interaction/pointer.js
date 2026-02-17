@@ -1,19 +1,36 @@
 // interaction/pointer.js
-import { state, GRID_STEP_SNAP, CAP_W, NOR_W, OVERLAP } from '../engine/state.js'
+import {
+    state,
+    GRID_STEP_SNAP,
+    CAP_W,
+    NOR_W,
+    OVERLAP,
+    CLEAR_FROM_CAPITAL,
+} from '../engine/state.js'
 import { render } from '../renderer/render.js'
 import { screenToWorld } from '../renderer/svg.js'
-import { smartSnapPoint, isSegmentAllowed } from '../engine/constraints.js'
+import {
+    smartSnapPoint,
+    isSegmentAllowed,
+    isSegmentClearOfCapitals,
+} from '../engine/constraints.js'
+import { normalizeNormalWall } from '../engine/normalize-wall.js'
 
+// ---------------- helpers ----------------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
 
 // thresholds
-const TAP_THRESH_PX = 10   // tap vs drag on touch
-const CANCEL_A_PX = 14     // tap near A cancels A (only if tap)
+const TAP_THRESH_PX = 10
+const CANCEL_A_PX = 14
 
 const clearPulse = () => {
     if (state.ui) state.ui.snapPulse = null
 }
+
+// ✅ ДЛЯ РИСОВАНИЯ делаем “clear” заметно меньше, чем для select
+// Если всё ещё широко — уменьши множитель: 0.2 / 0.15
+const DRAW_CLEAR = Math.max(0, (Number.isFinite(CLEAR_FROM_CAPITAL) ? CLEAR_FROM_CAPITAL : 0) * 0.1)
 
 // ---------------- trim to capitals ----------------
 function nearestPointOnSeg(p, a, b) {
@@ -37,27 +54,38 @@ function trimWallToCapitals(wall) {
     const caps = (state.walls || []).filter(w => w.kind === 'capital')
     if (!caps.length) return wall
 
+    wall.va = { ...wall.a }
+    wall.vb = { ...wall.b }
+
     const scale = Math.max(1e-6, state.view.scale)
     const tolWorld = 22 / scale
-    const trimLen = CAP_W / 2 + NOR_W / 2 - OVERLAP
 
-    const snapTrimEnd = (end, other) => {
+    const trimLenVisual = CAP_W / 2 + NOR_W / 2 - OVERLAP
+
+    const snapTrimEnd = (endKey, end, other) => {
         let best = null
+
         for (const c of caps) {
             const q = nearestPointOnSeg(end, c.a, c.b)
             const d = dist(end, q)
             if (d <= tolWorld && (!best || d < best.d)) best = { q, d }
         }
+
         if (!best) return end
-        return trimPointBack(other, best.q, trimLen)
+
+        if (endKey === 'a') wall.va = { ...best.q }
+        else wall.vb = { ...best.q }
+
+        return trimPointBack(other, best.q, trimLenVisual)
     }
 
-    wall.a = snapTrimEnd(wall.a, wall.b)
-    wall.b = snapTrimEnd(wall.b, wall.a)
+    wall.a = snapTrimEnd('a', wall.a, wall.b)
+    wall.b = snapTrimEnd('b', wall.b, wall.a)
+
     return wall
 }
 
-// helper: distance in px (screen space)
+// distance in px (screen space)
 function distPx(a, b) {
     const dx = a.x - b.x
     const dy = a.y - b.y
@@ -67,11 +95,10 @@ function distPx(a, b) {
 // --------------------------------------------------
 
 export function initPointer(draw, { newWallId } = {}) {
-    let firstPoint = null         // A in world coords (active segment start)
-    let down = null               // {x, y, id}
-    let suppressPreview = false   // after rollback: don't instantly draw preview on next move
+    let firstPoint = null
+    let down = null
+    let suppressPreview = false
 
-    // tiny render throttle (so svg doesn't blink)
     let raf = 0
     const scheduleRender = () => {
         if (raf) return
@@ -100,11 +127,6 @@ export function initPointer(draw, { newWallId } = {}) {
         scheduleRender()
     }
 
-    // ✅ NEW:
-    // invalid B rollback:
-    // - touch  -> snapPoint returns to A
-    // - mouse  -> snapPoint stays at B (under cursor)
-    // also clears A (firstPoint=null) so we don't auto-draw
     const cancelInvalidB = (p, pointerType) => {
         const aSaved = firstPoint ? { ...firstPoint } : null
 
@@ -115,10 +137,8 @@ export function initPointer(draw, { newWallId } = {}) {
         clearPulse()
 
         if (pointerType === 'touch') {
-            // мобилка: вернуть курсор в A
             if (aSaved) state.snapPoint = aSaved
         } else {
-            // десктоп: оставить курсор под мышью (в точке B)
             state.snapPoint = { ...p }
         }
 
@@ -169,20 +189,14 @@ export function initPointer(draw, { newWallId } = {}) {
 
         const p = updateCursorFromEvent(e)
 
-        // If A not chosen -> just cursor (black), no preview
         if (!firstPoint) {
             state.cursorState = 'idle'
             state.previewWall = null
-            // suppressPreview тут не трогаем — он сбросится ниже
-            // чтобы после rollback не возникало мгновенной линии
-            if (suppressPreview) {
-                suppressPreview = false
-            }
+            if (suppressPreview) suppressPreview = false
             scheduleRender()
             return
         }
 
-        // after rollback we don't want instant "from A" preview
         if (suppressPreview) {
             state.cursorState = 'idle'
             state.previewWall = null
@@ -191,9 +205,13 @@ export function initPointer(draw, { newWallId } = {}) {
             return
         }
 
-        const ok = isSegmentAllowed(firstPoint, p)
+        const okAllowed = isSegmentAllowed(firstPoint, p)
+        const okClear = isSegmentClearOfCapitals(firstPoint, p, DRAW_CLEAR)
+
+        const ok = okAllowed && okClear
         state.cursorState = ok ? 'valid' : 'invalid'
         state.previewWall = { a: firstPoint, b: p, ok }
+
         scheduleRender()
     }, { passive: false })
 
@@ -221,7 +239,6 @@ export function initPointer(draw, { newWallId } = {}) {
         const wasDown = down
         down = null
 
-        // tap vs drag (only matters for touch when choosing A)
         const isTap =
             wasDown
                 ? distPx({ x: e.clientX, y: e.clientY }, { x: wasDown.x, y: wasDown.y }) <= TAP_THRESH_PX
@@ -229,9 +246,8 @@ export function initPointer(draw, { newWallId } = {}) {
 
         const p = state.snapPoint ? { ...state.snapPoint } : updateCursorFromEvent(e)
 
-        // 1) A not set yet
+        // 1) choose A
         if (!firstPoint) {
-            // A ONLY on tap for touch.
             if (e.pointerType === 'touch' && !isTap) {
                 state.cursorState = 'idle'
                 state.previewWall = null
@@ -239,12 +255,17 @@ export function initPointer(draw, { newWallId } = {}) {
                 return
             }
 
-            if (!isSegmentAllowed(p, p)) {
-                state.cursorState = 'invalid'
-                state.previewWall = null
-                scheduleRender()
-                return
-            }
+            // ✅ Не даём ставить A в зоне, где B всё равно будет запрещён
+            // (проверяем “точку”, как минимальный сегмент)
+          // ✅ A можно ставить везде (включая на капитальных и рядом)
+// ограничения проверяем уже на сегменте A->B
+firstPoint = p
+state.cursorState = 'valid'
+state.previewWall = { a: firstPoint, b: p, ok: true }
+suppressPreview = false
+scheduleRender()
+return
+
 
             firstPoint = p
             state.cursorState = 'valid'
@@ -256,7 +277,6 @@ export function initPointer(draw, { newWallId } = {}) {
 
         // 2) A exists
 
-        // cancel A if TAP near A (only if tap)
         if (isTap) {
             const tolWorld = CANCEL_A_PX / Math.max(1e-6, state.view.scale)
             const dWorld = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
@@ -266,11 +286,11 @@ export function initPointer(draw, { newWallId } = {}) {
             }
         }
 
-        // try place B (B allowed both on tap and on drag-release)
-        if (!isSegmentAllowed(firstPoint, p)) {
-            // ✅ rollback:
-            // touch -> cursor to A
-            // mouse -> cursor stays at B
+        // ✅ ВАЖНО: проверяем и allowed, и clear ПЕРЕД созданием стены
+        const okAllowed = isSegmentAllowed(firstPoint, p)
+        const okClear = isSegmentClearOfCapitals(firstPoint, p, DRAW_CLEAR)
+
+        if (!(okAllowed && okClear)) {
             cancelInvalidB(p, e.pointerType)
             return
         }
@@ -280,14 +300,17 @@ export function initPointer(draw, { newWallId } = {}) {
 
         trimWallToCapitals(newWall)
 
-        if (!isSegmentAllowed(newWall.a, newWall.b)) {
+        // ✅ после trim снова проверяем (на всякий)
+        const okAllowed2 = isSegmentAllowed(newWall.a, newWall.b)
+        const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, DRAW_CLEAR)
+
+        if (!(okAllowed2 && okClear2)) {
             cancelInvalidB(p, e.pointerType)
             return
         }
 
         state.walls.push(newWall)
 
-        // success -> reset A, keep cursor at B (black/idle)
         firstPoint = null
         state.previewWall = null
         state.snapPoint = { ...p }

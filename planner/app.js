@@ -19,6 +19,8 @@ import {
     isSegmentAllowed,
     isSegmentClearOfCapitals,
 } from '../engine/constraints.js'
+import { normalizeNormalWall } from '../engine/normalize-wall.js'
+
 
 // ✅ метрики
 import {
@@ -68,7 +70,6 @@ function updateDeleteButtonState() {
     btnTrash.classList.add('is-danger')
 }
 
-
 // ---------------- status metrics ----------------
 function updateStatus() {
     if (!status) return
@@ -114,7 +115,6 @@ function placeCursorAtViewportCenter() {
         tGuard: 0.08,
     })
 
-
     state.cursorState = 'idle' // ✅ по умолчанию чёрный
 }
 
@@ -152,7 +152,9 @@ function syncUI() {
 }
 
 btnSelect?.addEventListener('click', () => setMode('select'))
-btnWall?.addEventListener('click', () => setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall'))
+btnWall?.addEventListener('click', () =>
+    setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall')
+)
 
 // -------- delete selected --------
 function deleteSelectedWall() {
@@ -196,26 +198,31 @@ initViewport(draw)
 initPointer(draw, { newWallId })
 window.addEventListener('planner:changed', rerender)
 
-
 // ---------------- SELECT: move + resize ----------------
 function getWallById(id) {
     return (state.walls || []).find(w => w.id === id) || null
 }
 
 function startEdit(kind, wallId, mouseWorld) {
-    const w = getWallById(wallId)
-    if (!w || w.kind === 'capital') return
+  const w = getWallById(wallId)
+  if (!w || w.kind === 'capital') return
 
-    state.ui = state.ui || {}
-    state.ui.lockPan = true
+  state.ui = state.ui || {}
+  state.ui.lockPan = true
 
-    state.edit = {
-        id: wallId,
-        kind, // 'move' | 'a' | 'b'
-        startMouse: { ...mouseWorld },
-        startA: { ...w.a },
-        startB: { ...w.b },
-    }
+  state.edit = {
+    id: wallId,
+    kind, // 'move' | 'a' | 'b'
+    startMouse: { ...mouseWorld },
+
+    // видимые
+    startA: { ...w.a },
+    startB: { ...w.b },
+
+    // строительные (главные)
+    startVA: { ...(w.va || w.a) },
+    startVB: { ...(w.vb || w.b) },
+  }
 }
 
 function stopEdit() {
@@ -298,77 +305,105 @@ function snapWholeSegmentToCapital(a, b, snapPx = 22) {
     }
 }
 
-function applyEdit(mouseWorld) {
-    const ed = state.edit
-    if (!ed) return
-    const w = getWallById(ed.id)
-    if (!w) return
-
-    const dx = mouseWorld.x - ed.startMouse.x
-    const dy = mouseWorld.y - ed.startMouse.y
-
-    let newA = { ...ed.startA }
-    let newB = { ...ed.startB }
-
-    const snapOpts = {
-        grid: GRID_STEP_SNAP,
-        snapPx: 14,
-        axisPx: 10,
-        toGrid: true,
-        toPoints: true,
-        toAxis: true,
-        toCapital: true,
-        toNormals: true,
+/* ------------------ ✅ BUILDING ENDS (va/vb) refresh ------------------ */
+/**
+ * После редактирования normal-стены (двиг/ресайз) нам нужно поддерживать:
+ * - w.a/w.b = видимая (подрезанная) геометрия
+ * - w.va/w.vb = "строительная" геометрия (до оси капитальной), чтобы длины не прыгали
+ */
+function refreshBuildingEnds(w, snapPx = 22) {
+    const caps = (state.walls || []).filter(x => x && x.kind === 'capital')
+    if (!caps.length) {
+        w.va = { ...w.a }
+        w.vb = { ...w.b }
+        return
     }
 
-    if (ed.kind === 'move') {
-        // 1) грубый перенос
-        let movedA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
-        let movedB = { x: ed.startB.x + dx, y: ed.startB.y + dy }
+    const scale = Math.max(1e-6, state.view.scale)
+    const trimLenVisual = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
+    const tolWorld = (snapPx / scale) + trimLenVisual + 2
 
-        // 2) перенос по сетке (без прилипания к стенам)
-        movedA = smartSnapPoint(movedA, null, {
-            ...snapOpts,
-            toAxis: false,
-            toCapital: false,
-            toNormals: false,
-        })
-        movedB = {
-            x: movedA.x + (ed.startB.x - ed.startA.x),
-            y: movedA.y + (ed.startB.y - ed.startA.y),
+    const proj = (p) => {
+        let best = null
+        for (const c of caps) {
+            const pr = projectPointToSegmentClamped(p, c.a, c.b)
+            if (!best || pr.d < best.d) best = pr
         }
-
-        // 3) дожим всей стены к капитальным + подрезка
-        const snapped = snapWholeSegmentToCapital(movedA, movedB, 22)
-        newA = snapped.a
-        newB = snapped.b
+        return best && best.d <= tolWorld ? best.point : p
     }
 
-    if (ed.kind === 'a') {
-        newA = { x: ed.startA.x + dx, y: ed.startA.y + dy }
-        newA = smartSnapPoint(newA, newB, snapOpts)
-
-        const t = snapTrimEndToCapital(newA, newB, 22)
-        if (t) newA = t
-    }
-
-    if (ed.kind === 'b') {
-        newB = { x: ed.startB.x + dx, y: ed.startB.y + dy }
-        newB = smartSnapPoint(newB, newA, snapOpts)
-
-        const t = snapTrimEndToCapital(newB, newA, 22)
-        if (t) newB = t
-    }
-
-    // ✅ ВАЖНО: запрет “утопить” normal внутрь капитальной
-    // (ставим после того, как точки посчитаны!)
-    if (!isSegmentClearOfCapitals(newA, newB, CLEAR_FROM_CAPITAL)) return
-
-    if (!isSegmentAllowed(newA, newB, { ignoreWallId: ed.id })) return
-
-    w.a = newA
-    w.b = newB
+    w.va = { ...proj(w.a) }
+    w.vb = { ...proj(w.b) }
 }
+
+function applyEdit(mouseWorld) {
+  const ed = state.edit
+  if (!ed) return
+  const w = getWallById(ed.id)
+  if (!w) return
+
+  const dx = mouseWorld.x - ed.startMouse.x
+  const dy = mouseWorld.y - ed.startMouse.y
+
+  let newVA = { ...ed.startVA }
+  let newVB = { ...ed.startVB }
+
+  const snapOpts = {
+    grid: GRID_STEP_SNAP,
+    snapPx: 14,
+    axisPx: 10,
+    toGrid: true,
+    toPoints: true,
+    toAxis: true,
+    toCapital: true,
+    toNormals: true,
+  }
+
+  if (ed.kind === 'move') {
+    let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+    let movedB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
+
+    // перенос по сетке (без осей/капитальных/нормалей)
+    movedA = smartSnapPoint(movedA, null, {
+      ...snapOpts,
+      toAxis: false,
+      toCapital: false,
+      toNormals: false,
+    })
+    movedB = {
+      x: movedA.x + (ed.startVB.x - ed.startVA.x),
+      y: movedA.y + (ed.startVB.y - ed.startVA.y),
+    }
+
+    newVA = movedA
+    newVB = movedB
+  }
+
+  if (ed.kind === 'a') {
+    newVA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+    newVA = smartSnapPoint(newVA, newVB, snapOpts)
+  }
+
+  if (ed.kind === 'b') {
+    newVB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
+    newVB = smartSnapPoint(newVB, newVA, snapOpts)
+  }
+
+  // запрет утопить нормал внутрь капитальной
+  if (!isSegmentClearOfCapitals(newVA, newVB, CLEAR_FROM_CAPITAL)) return
+  if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
+
+  // применяем строительную
+  w.va = newVA
+  w.vb = newVB
+
+  // нормализуем видимую
+  normalizeNormalWall(w, { snapPx: 22, doTrim: true })
+
+  w.va = newVA
+  w.vb = newVB
+}
+
 
 // pointerdown: выбираем, что делаем
 draw.node.addEventListener('pointerdown', (e) => {

@@ -29,17 +29,19 @@ function snapAndTrimEndpoint(endpoint, otherEnd, capitals) {
 
   for (const c of capitals) {
     const pr = projectPointToSegmentClamped(endpoint, c.a, c.b)
-    const d = pr.d
-    if (d <= SNAP_DIST && (!best || d < best.d)) best = { q: pr.point, d }
+    if (pr.d <= SNAP_DIST && (!best || pr.d < best.d)) best = { q: pr.point, d: pr.d }
   }
 
-  if (!best) return endpoint
+  if (!best) {
+    return { vis: endpoint, build: endpoint }
+  }
 
-  // конец “прибиваем” на капитальную и обрезаем назад
-  const OVERLAP = 5 // 2..8 подбери
+  const OVERLAP = 5
   const trim = CAP_W / 2 + NOR_W / 2 - OVERLAP
-  const snapped = best.q
-  return trimPointBack(otherEnd, snapped, trim)
+  const build = best.q
+  const vis = trimPointBack(otherEnd, build, trim)
+
+  return { vis, build }
 }
 
 function snapAndTrimNormalsToCapitals() {
@@ -48,10 +50,16 @@ function snapAndTrimNormalsToCapitals() {
 
   for (const w of state.walls) {
     if (w.kind !== 'normal') continue
-    const newA = snapAndTrimEndpoint(w.a, w.b, caps)
-    const newB = snapAndTrimEndpoint(w.b, w.a, caps)
-    w.a = newA
-    w.b = newB
+
+    const A = snapAndTrimEndpoint(w.a, w.b, caps)
+    const B = snapAndTrimEndpoint(w.b, w.a, caps)
+
+    w.a = A.vis
+    w.b = B.vis
+
+    // ✅ строительная геометрия для метрик/размеров
+    w.va = A.build
+    w.vb = B.build
   }
 }
 

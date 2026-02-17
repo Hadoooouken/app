@@ -49,10 +49,16 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     }
 
     // 3) axis (если есть fromPoint)
-    if (toAxis && fromPoint) {
-        if (Math.abs(p.x - fromPoint.x) <= axisWorld) consider({ x: fromPoint.x, y: p.y })
-        if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: p.x, y: fromPoint.y })
-    }
+  // 3) axis (если есть fromPoint)
+if (toAxis && fromPoint) {
+    // если включена сетка — свободную координату тоже к сетке
+    const snapY = (toGrid && grid > 0) ? (Math.round(p.y / grid) * grid) : p.y
+    const snapX = (toGrid && grid > 0) ? (Math.round(p.x / grid) * grid) : p.x
+
+    if (Math.abs(p.x - fromPoint.x) <= axisWorld) consider({ x: fromPoint.x, y: snapY })
+    if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: snapX, y: fromPoint.y })
+}
+
 
     // 4) T-стык: проекция на normal сегменты (только внутренняя часть)
     if (toNormals) {

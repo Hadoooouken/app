@@ -2,12 +2,33 @@
 import { state, UNITS_PER_M } from './state.js'
 
 const EPS = 1e-9
-
 const unitsToMeters = (u) => u / UNITS_PER_M
 
+// ======================================================
+// ✅ ЕДИНЫЙ ИСТОЧНИК ГЕОМЕТРИИ ДЛЯ МЕТРИК
+// ======================================================
+
+export function wallGeom(w) {
+  if (!w) return { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } }
+
+  // capital — используем внутреннюю грань
+  if (w.kind === 'capital') {
+    return {
+      a: w.ia || w.a,
+      b: w.ib || w.b,
+    }
+  }
+
+  // normal — используем строительную геометрию
+  return {
+    a: w.va || w.a,
+    b: w.vb || w.b,
+  }
+}
+
 export function wallLengthUnits(w) {
-  if (!w?.a || !w?.b) return 0
-  return Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y)
+  const { a, b } = wallGeom(w)
+  return Math.hypot(b.x - a.x, b.y - a.y)
 }
 
 export function wallLengthM(w) {
@@ -29,18 +50,20 @@ export function totalNormalLengthM() {
   return unitsToMeters(sumUnits)
 }
 
-// ----------------- CAPITAL POLYGON -> AREA -----------------
+// ======================================================
+// 🔷 ПЛОЩАДЬ КАПИТАЛЬНОГО КОНТУРА (внутри стен)
+// ======================================================
 
 function keyOf(p) {
   return `${p.x}:${p.y}`
 }
 
-// пытаемся собрать замкнутый контур из капитальных сегментов
 export function getCapitalPolygon() {
   const caps = (state.walls || []).filter(w => w?.kind === 'capital')
   if (caps.length < 3) return null
 
   const map = new Map()
+
   const add = (p, q) => {
     const k = keyOf(p)
     if (!map.has(k)) map.set(k, { p, n: [] })
@@ -48,11 +71,12 @@ export function getCapitalPolygon() {
   }
 
   for (const s of caps) {
-    add(s.a, s.b)
-    add(s.b, s.a)
+    const { a, b } = wallGeom(s)
+    add(a, b)
+    add(b, a)
   }
 
-  const first = caps[0].a
+  const first = wallGeom(caps[0]).a
   const firstK = keyOf(first)
   const loop = [{ ...first }]
 
@@ -88,7 +112,6 @@ export function capitalAreaUnits2() {
   const poly = getCapitalPolygon()
   if (!poly || poly.length < 3) return 0
 
-  // shoelace (в units^2)
   let s = 0
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i]
@@ -99,12 +122,12 @@ export function capitalAreaUnits2() {
 }
 
 export function capitalAreaM2() {
-  // units^2 -> m^2
-  // (u/UNITS_PER_M)^2
   return capitalAreaUnits2() / (UNITS_PER_M * UNITS_PER_M)
 }
 
-// ----------------- formatting helpers -----------------
+// ======================================================
+// formatting helpers
+// ======================================================
 
 export function fmtM(v, digits = 2) {
   if (!Number.isFinite(v)) return '0'

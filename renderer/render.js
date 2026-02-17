@@ -1,6 +1,6 @@
 // renderer/render.js
 import { state, UNITS_PER_M, GRID_STEP_VIEW } from '../engine/state.js'
-import { wallLengthUnits } from '../engine/metrics.js'
+import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 
 const CAP_W = 28
 const NOR_W = 10
@@ -13,7 +13,7 @@ const SELECT_COLOR = '#0a84ff'
 const CURSOR_IDLE = '#111'
 const CURSOR_INVALID = '#ff3b30'
 
-// размеры
+// dimensions
 const DIM_COLOR = '#111'
 const DIM_BG = '#ffffff'
 const DIM_BG_OPACITY = 0.75
@@ -39,7 +39,7 @@ function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
-// чтобы текст НЕ был вверх ногами
+// so text not upside down
 function readableRotation(deg) {
   let r = deg
   while (r > 180) r -= 360
@@ -57,20 +57,22 @@ function unitNormal(a, b) {
   return { nx: -dy / len, ny: dx / len }
 }
 
+
+
+// ✅ bbox for "inside box" label — use capitals a/b (building inner contour)
 function getCapitalBBox(walls) {
   const caps = walls.filter(w => w.kind === 'capital')
   if (!caps.length) return null
 
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
 
   for (const w of caps) {
-    minX = Math.min(minX, w.a.x, w.b.x)
-    minY = Math.min(minY, w.a.y, w.b.y)
-    maxX = Math.max(maxX, w.a.x, w.b.x)
-    maxY = Math.max(maxY, w.a.y, w.b.y)
+    const a = w.a
+    const b = w.b
+    minX = Math.min(minX, a.x, b.x)
+    minY = Math.min(minY, a.y, b.y)
+    maxX = Math.max(maxX, a.x, b.x)
+    maxY = Math.max(maxY, a.y, b.y)
   }
 
   return { minX, minY, maxX, maxY }
@@ -118,6 +120,10 @@ export function fitToWalls(draw, opts = {}) {
 }
 
 export function render(draw) {
+  // ✅ keep call (harmless if you already set ia/ib=a/b),
+  // but it won't affect box because we don't use ia/ib anymore here.
+  ensureCapitalInnerFaces()
+
   draw.clear()
 
   const scene = draw.group().id('scene')
@@ -161,6 +167,7 @@ export function render(draw) {
 
   // 2) NORMAL + hit lines
   for (const w of normals) {
+    // visible
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
@@ -171,6 +178,7 @@ export function render(draw) {
       })
       .attr({ 'pointer-events': 'none' })
 
+    // hit
     if (w.id) {
       wallsG
         .line(w.a.x, w.a.y, w.b.x, w.b.y)
@@ -283,13 +291,33 @@ export function render(draw) {
   const fontSize = 12 * invScale
   const pad = 3 * invScale
 
+
+  // 1) length label for each wall
   for (const w of walls) {
-    const lenM = unitsToMeters(wallLengthUnits(w))
+    // ✅ позицию/поворот считаем по фактической (видимой) геометрии
+    // позиция/поворот лейбла — по видимой геометрии
+    const posA = w.a
+    const posB = w.b
+
+    // длина — ВСЕГДА по строительной геометрии
+    let lenA, lenB
+    if (w.kind !== 'capital') {
+      lenA = w.va || w.a
+      lenB = w.vb || w.b
+    } else {
+      // как у тебя: можно ia/ib, если есть, иначе a/b
+      lenA = w.ia || w.a
+      lenB = w.ib || w.b
+    }
+
+    const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
+    const lenM = unitsToMeters(lenUnits)
     const txt = formatMeters(lenM)
 
-    const mid = midPoint(w.a, w.b)
-    const ang = readableRotation(angleDeg(w.a, w.b))
-    const { nx, ny } = unitNormal(w.a, w.b)
+
+    const mid = midPoint(posA, posB)
+    const ang = readableRotation(angleDeg(posA, posB))
+    const { nx, ny } = unitNormal(posA, posB)
 
     const offsetFromWall = (w.kind === 'capital' ? 24 : 14) * invScale
     const lx = mid.x + nx * offsetFromWall
@@ -318,35 +346,45 @@ export function render(draw) {
     g.rotate(ang, lx, ly)
   }
 
-  const capBB = getCapitalBBox(walls)
-  if (capBB) {
-    const Wm = unitsToMeters(capBB.maxX - capBB.minX)
-    const Hm = unitsToMeters(capBB.maxY - capBB.minY)
 
-    const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
-    const x = (capBB.minX + capBB.maxX) / 2
-    const y = capBB.minY - 28 * invScale
+  // 2) "inside box" label (bbox by capitals a/b => should be 12.00 × 7.60)
+  {
+    const bb = getCapitalBBox(walls)
+    if (bb) {
+      const Wm = unitsToMeters(bb.maxX - bb.minX)
+      const Hm = unitsToMeters(bb.maxY - bb.minY)
 
-    const t = dimsG.text(label)
-    t.font({
-      size: 13 * invScale,
-      family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
-      weight: 600,
-    })
-    t.fill(DIM_COLOR)
+      const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
 
-    const bb = t.bbox()
-    const bg = dimsG
-      .rect(bb.width + pad * 2, bb.height + pad * 2)
-      .fill({ color: DIM_BG, opacity: 0.9 })
-      .radius(4 * invScale)
+      const fontSize2 = 13 * invScale
+      const pad2 = 4 * invScale
+      const rx = 6 * invScale
 
-    const g = dimsG.group()
-    g.add(bg)
-    g.add(t)
+      const cx = (bb.minX + bb.maxX) / 2
+      const y = bb.minY - 40 * invScale
 
-    bg.move(x - bb.width / 2 - pad, y - bb.height / 2 - pad)
-    t.center(x, y)
+      const g = dimsG.group()
+
+      const t = g.text(label)
+      t.font({
+        size: fontSize2,
+        family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
+        weight: 600,
+      })
+      t.fill('#111')
+
+      const tb = t.bbox()
+
+      const bg = g
+        .rect(tb.width + pad2 * 2, tb.height + pad2 * 2)
+        .fill({ color: '#fff', opacity: 0.9 })
+        .radius(rx)
+
+      // ✅ надежно позиционируем
+      bg.center(cx, y)
+      t.center(cx, y)
+      bg.back()
+    }
   }
 
   // ---------- draft / preview ----------
@@ -371,17 +409,20 @@ export function render(draw) {
   }
 
   // ---------- CURSOR DOT (idle/valid/invalid) ----------
-  if (state.mode === 'draw-wall' && state.snapPoint && Number.isFinite(state.snapPoint.x) && Number.isFinite(state.snapPoint.y)) {
+  if (
+    state.mode === 'draw-wall' &&
+    state.snapPoint &&
+    Number.isFinite(state.snapPoint.x) &&
+    Number.isFinite(state.snapPoint.y)
+  ) {
     const cs = state.cursorState || 'idle'
-    const color = cs === 'valid' ? SELECT_COLOR : (cs === 'invalid' ? CURSOR_INVALID : CURSOR_IDLE)
+    const color = cs === 'valid' ? SELECT_COLOR : cs === 'invalid' ? CURSOR_INVALID : CURSOR_IDLE
 
-    // размер в пикселях -> через invScale
     const r = 6 * invScale
     const strokeW = 2 * invScale
 
-    // небольшая белая подложка для контраста
     scene
-      .circle((r * 2) + strokeW * 2)
+      .circle(r * 2 + strokeW * 2)
       .center(state.snapPoint.x, state.snapPoint.y)
       .fill({ color: '#fff', opacity: 0.9 })
       .stroke({ width: 0 })
