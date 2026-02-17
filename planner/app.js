@@ -96,6 +96,28 @@ function rerender() {
     updateDeleteButtonState()
 }
 
+function placeCursorAtViewportCenter() {
+    const rect = draw.node.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const raw = screenToWorld(draw, cx, cy)
+
+    state.snapPoint = smartSnapPoint(raw, null, {
+        grid: GRID_STEP_SNAP,
+        snapPx: 22,
+        axisPx: 14,
+        toGrid: true,
+        toPoints: true,
+        toAxis: true,
+        toCapital: true,
+        toNormals: true,
+        tGuard: 0.08,
+    })
+
+
+    state.cursorState = 'idle' // ✅ по умолчанию чёрный
+}
+
 // -------- mode helpers --------
 function setMode(mode) {
     state.mode = mode
@@ -105,6 +127,13 @@ function setMode(mode) {
     state.edit = null
     state.ui = state.ui || {}
     state.ui.lockPan = false
+
+    if (mode === 'draw-wall') {
+        placeCursorAtViewportCenter()
+    } else {
+        state.cursorState = 'idle'
+        state.snapPoint = null
+    }
 
     syncUI()
     rerender()

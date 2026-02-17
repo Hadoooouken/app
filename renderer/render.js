@@ -1,5 +1,5 @@
 // renderer/render.js
-import { state, UNITS_PER_M, GRID_STEP_VIEW  } from '../engine/state.js'
+import { state, UNITS_PER_M, GRID_STEP_VIEW } from '../engine/state.js'
 import { wallLengthUnits } from '../engine/metrics.js'
 
 const CAP_W = 28
@@ -8,6 +8,10 @@ const NOR_W = 10
 const CAP_COLOR = '#111'
 const NOR_COLOR = '#343938'
 const SELECT_COLOR = '#0a84ff'
+
+// cursor colors
+const CURSOR_IDLE = '#111'
+const CURSOR_INVALID = '#ff3b30'
 
 // размеры
 const DIM_COLOR = '#111'
@@ -123,6 +127,8 @@ export function render(draw) {
     scale: state.view.scale,
   })
 
+  const invScale = 1 / Math.max(1e-6, state.view.scale)
+
   // GRID
   const grid = scene.group().id('grid')
   const step = GRID_STEP_VIEW
@@ -155,7 +161,6 @@ export function render(draw) {
 
   // 2) NORMAL + hit lines
   for (const w of normals) {
-    // visible
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
@@ -166,7 +171,6 @@ export function render(draw) {
       })
       .attr({ 'pointer-events': 'none' })
 
-    // hit (только если есть id)
     if (w.id) {
       wallsG
         .line(w.a.x, w.a.y, w.b.x, w.b.y)
@@ -226,7 +230,6 @@ export function render(draw) {
         })
         .attr({ 'pointer-events': 'none' })
 
-      // circle(size) — ДИАМЕТР
       const r = 12
       wallsG
         .circle(r * 2)
@@ -244,16 +247,14 @@ export function render(draw) {
     }
   }
 
-  // ---------- SNAP PULSE (кружок "магнит") ----------
+  // ---------- SNAP PULSE ----------
   {
     const sp = state.ui?.snapPulse
     if (sp && Number.isFinite(sp.x) && Number.isFinite(sp.y)) {
-      const invScale = 1 / Math.max(1e-6, state.view.scale)
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
       const t0 = sp.t ?? now
       const dt = now - t0
 
-      // живет ~350мс
       if (dt < 350) {
         const k = dt / 350
         const r = (6 + 10 * k) * invScale
@@ -279,13 +280,10 @@ export function render(draw) {
   const dimsG = scene.group().id('dims')
   dimsG.attr({ 'pointer-events': 'none' })
 
-  const invScale = 1 / Math.max(1e-6, state.view.scale)
   const fontSize = 12 * invScale
   const pad = 3 * invScale
 
-  // 1) подписи длины каждой стены
   for (const w of walls) {
-    // (если не хочешь размеры для всех — можно ограничить: if (w.kind==='capital') continue
     const lenM = unitsToMeters(wallLengthUnits(w))
     const txt = formatMeters(lenM)
 
@@ -293,9 +291,7 @@ export function render(draw) {
     const ang = readableRotation(angleDeg(w.a, w.b))
     const { nx, ny } = unitNormal(w.a, w.b)
 
-    // для capital дальше от линии
     const offsetFromWall = (w.kind === 'capital' ? 24 : 14) * invScale
-
     const lx = mid.x + nx * offsetFromWall
     const ly = mid.y + ny * offsetFromWall
 
@@ -307,7 +303,6 @@ export function render(draw) {
     t.fill(fillText)
 
     const bb = t.bbox()
-
     const bg = dimsG
       .rect(bb.width + pad * 2, bb.height + pad * 2)
       .fill({ color: DIM_BG, opacity: DIM_BG_OPACITY })
@@ -323,7 +318,6 @@ export function render(draw) {
     g.rotate(ang, lx, ly)
   }
 
-  // 2) габариты коробки (bbox по capital)
   const capBB = getCapitalBBox(walls)
   if (capBB) {
     const Wm = unitsToMeters(capBB.maxX - capBB.minX)
@@ -360,7 +354,7 @@ export function render(draw) {
     const { a, b } = state.draft
     scene.line(a.x, a.y, b.x, b.y).stroke({
       width: 6,
-      color: '#0a84ff',
+      color: SELECT_COLOR,
       dasharray: '10 8',
       linecap: 'round',
     })
@@ -370,9 +364,34 @@ export function render(draw) {
     const { a, b, ok } = state.previewWall
     scene.line(a.x, a.y, b.x, b.y).stroke({
       width: 6,
-      color: ok ? '#0a84ff' : '#ff3b30',
+      color: ok ? SELECT_COLOR : CURSOR_INVALID,
       dasharray: '10 8',
       linecap: 'round',
     })
+  }
+
+  // ---------- CURSOR DOT (idle/valid/invalid) ----------
+  if (state.mode === 'draw-wall' && state.snapPoint && Number.isFinite(state.snapPoint.x) && Number.isFinite(state.snapPoint.y)) {
+    const cs = state.cursorState || 'idle'
+    const color = cs === 'valid' ? SELECT_COLOR : (cs === 'invalid' ? CURSOR_INVALID : CURSOR_IDLE)
+
+    // размер в пикселях -> через invScale
+    const r = 6 * invScale
+    const strokeW = 2 * invScale
+
+    // небольшая белая подложка для контраста
+    scene
+      .circle((r * 2) + strokeW * 2)
+      .center(state.snapPoint.x, state.snapPoint.y)
+      .fill({ color: '#fff', opacity: 0.9 })
+      .stroke({ width: 0 })
+      .attr({ 'pointer-events': 'none' })
+
+    scene
+      .circle(r * 2)
+      .center(state.snapPoint.x, state.snapPoint.y)
+      .fill({ color, opacity: 0.95 })
+      .stroke({ width: strokeW, color: '#fff', opacity: 0.9 })
+      .attr({ 'pointer-events': 'none' })
   }
 }
