@@ -14,12 +14,7 @@
   <!-- LEFT PANEL -->
   <aside class="panel">
     <div class="panel__title">Planner</div>
-
-    <button id="btn-select" class="tool is-active" type="button">
-      <span class="tool__icon">🖱️</span>
-      <span class="tool__label">Select</span>
-    </button>
-
+    
     <button id="btn-wall" class="tool" type="button">
       <span class="tool__icon">🧱</span>
       <span class="tool__label">Wall</span>
@@ -39,6 +34,14 @@
     <button class="zoom__btn" id="zoom-in" type="button">＋</button>
     <button class="zoom__btn" id="zoom-out" type="button">−</button>
     <button class="zoom__btn" id="zoom-reset" type="button">⦿</button>
+  </div>
+  <!-- DPAD (move) -->
+  <div class="dpad" id="dpad">
+    <button class="dpad__btn dpad__btn--up" data-pan="up" type="button" aria-label="Up">↑</button>
+    <button class="dpad__btn dpad__btn--left" data-pan="left" type="button" aria-label="Left">←</button>
+    <button class="dpad__btn dpad__btn--center" data-pan="center" type="button" aria-label="Center">⦿</button>
+    <button class="dpad__btn dpad__btn--right" data-pan="right" type="button" aria-label="Right">→</button>
+    <button class="dpad__btn dpad__btn--down" data-pan="down" type="button" aria-label="Down">↓</button>
   </div>
 
   <!-- BOTTOM INFO -->

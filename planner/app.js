@@ -21,7 +21,6 @@ import {
 } from '../engine/constraints.js'
 import { normalizeNormalWall } from '../engine/normalize-wall.js'
 
-
 // ✅ метрики
 import {
     getSelectedWall,
@@ -34,6 +33,8 @@ import {
 
 const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
+
+// coarse = мобилки/планшеты (hover не нужен)
 const isTouchLike = matchMedia('(pointer: coarse)').matches
 
 // -------- id generator for user walls --------
@@ -41,19 +42,29 @@ let wallAutoId = 10000
 const newWallId = () => `u${Date.now()}_${wallAutoId++}`
 
 // -------- UI refs --------
-const btnSelect = document.getElementById('btn-select')
 const btnWall = document.getElementById('btn-wall')
 const btnTrash = document.getElementById('btn-trash')
 const hint = document.getElementById('hint')
 const status = document.getElementById('status')
 
+// ---------------- render throttle ----------------
+let raf = 0
+function scheduleRerender() {
+    if (raf) return
+    raf = requestAnimationFrame(() => {
+        raf = 0
+        rerender()
+    })
+}
+
+// ---------------- status / delete btn ----------------
 function updateDeleteButtonState() {
     if (!btnTrash) return
 
     const sel = state.selectedWallId
-    const isSelectMode = state.mode === 'select'
 
-    if (!isSelectMode || !sel) {
+    // во время рисования стен — удаление отключаем
+    if (state.mode === 'draw-wall' || !sel) {
         btnTrash.classList.add('is-disabled')
         btnTrash.classList.remove('is-danger')
         return
@@ -61,17 +72,18 @@ function updateDeleteButtonState() {
 
     const w = state.walls.find(w => w.id === sel)
 
+    // нельзя удалять capital или если стену не нашли
     if (!w || w.kind === 'capital') {
         btnTrash.classList.add('is-disabled')
         btnTrash.classList.remove('is-danger')
         return
     }
 
+    // можно удалять normal
     btnTrash.classList.remove('is-disabled')
     btnTrash.classList.add('is-danger')
 }
 
-// ---------------- status metrics ----------------
 function updateStatus() {
     if (!status) return
 
@@ -98,6 +110,80 @@ function rerender() {
     updateDeleteButtonState()
 }
 
+// ---------------- pan / dpad ----------------
+function panBy(dx, dy) {
+    state.view.offsetX += dx
+    state.view.offsetY += dy
+    rerender()
+}
+
+function initDPad() {
+    const root = document.getElementById('dpad')
+    if (!root) return
+
+    const STEP = 40 // px за тик
+    const FIRST_DELAY = 140
+    const REPEAT_MS = 30
+
+    let timer = null
+    let repeater = null
+
+    const dirToDelta = (dir) => {
+        switch (dir) {
+            case 'up': return { dx: 0, dy: STEP }
+            case 'down': return { dx: 0, dy: -STEP }
+            case 'left': return { dx: STEP, dy: 0 }
+            case 'right': return { dx: -STEP, dy: 0 }
+            default: return { dx: 0, dy: 0 }
+        }
+    }
+
+    const stop = () => {
+        if (timer) clearTimeout(timer)
+        if (repeater) clearInterval(repeater)
+        timer = null
+        repeater = null
+        root.querySelectorAll('.dpad__btn.is-pressed').forEach(b => b.classList.remove('is-pressed'))
+    }
+
+    const startRepeat = (btn, dir) => {
+        stop()
+        btn.classList.add('is-pressed')
+
+        if (dir === 'center') {
+            fitToWalls(draw, { padding: 240, maxScale: 1.1 })
+            rerender()
+            setTimeout(stop, 0)
+            return
+        }
+
+        const { dx, dy } = dirToDelta(dir)
+        panBy(dx, dy)
+
+        timer = setTimeout(() => {
+            repeater = setInterval(() => panBy(dx, dy), REPEAT_MS)
+        }, FIRST_DELAY)
+    }
+
+    root.addEventListener('pointerdown', (e) => {
+        const btn = e.target.closest('.dpad__btn')
+        if (!btn) return
+        e.preventDefault?.()
+        btn.setPointerCapture?.(e.pointerId)
+        startRepeat(btn, btn.dataset.pan)
+    }, { passive: false })
+
+    root.addEventListener('pointerup', stop)
+    root.addEventListener('pointercancel', stop)
+    root.addEventListener('pointerleave', stop)
+
+    window.addEventListener('blur', stop)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stop()
+    })
+}
+
+// ---------------- cursor center (desktop only) ----------------
 function placeCursorAtViewportCenter() {
     const rect = draw.node.getBoundingClientRect()
     const cx = rect.left + rect.width / 2
@@ -116,7 +202,7 @@ function placeCursorAtViewportCenter() {
         tGuard: 0.08,
     })
 
-    state.cursorState = 'idle' // ✅ по умолчанию чёрный
+    state.cursorState = 'idle'
 }
 
 // -------- mode helpers --------
@@ -124,17 +210,20 @@ function setMode(mode) {
     state.mode = mode
     state.previewWall = null
     state.draft = null
-    state.selectedWallId = null
     state.edit = null
+
     state.ui = state.ui || {}
     state.ui.lockPan = false
 
-    if (mode === 'draw-wall') {
-        if (isTouchLike) {
-            state.snapPoint = null
-            state.cursorState = 'idle'
-        }
-    } else {
+if (mode === 'draw-wall') {
+  state.selectedWallId = null
+  state.hoverWallId = null
+
+  // ✅ и на мобиле, и на десктопе — НЕ ставим точку в центр
+  state.snapPoint = null
+  state.cursorState = 'idle'
+}
+else {
         state.cursorState = 'idle'
         state.snapPoint = null
     }
@@ -145,19 +234,17 @@ function setMode(mode) {
 
 function syncUI() {
     const isWall = state.mode === 'draw-wall'
-    btnSelect?.classList.toggle('is-active', !isWall)
     btnWall?.classList.toggle('is-active', isWall)
 
     if (hint) {
         hint.textContent = isWall
-            ? 'Wall: клик — первая точка, клик — вторая точка. ESC — отмена.'
-            : 'Select: клик/таскай стену или ручку. Delete — удалить. Перетаскивай пустоту для панорамирования.'
+            ? 'Wall: на мобиле — только drag. На десктопе — клик A, клик B. ESC — отмена.'
+            : 'Клик по стене — выделить. Drag по стене/хэндлам — редактировать. Drag по пустому — панорамирование.'
     }
 }
 
-btnSelect?.addEventListener('click', () => setMode('select'))
 btnWall?.addEventListener('click', () =>
-    setMode(state.mode === 'draw-wall' ? 'select' : 'draw-wall')
+    setMode(state.mode === 'draw-wall' ? 'idle' : 'draw-wall')
 )
 
 // -------- delete selected --------
@@ -171,7 +258,7 @@ function deleteSelectedWall() {
 
     state.walls.splice(idx, 1)
     state.selectedWallId = null
-    rerender()
+    scheduleRerender()
 }
 
 window.addEventListener('keydown', (e) => {
@@ -186,21 +273,70 @@ btnTrash?.addEventListener('click', deleteSelectedWall)
 // -------- zoom UI --------
 document.getElementById('zoom-in')?.addEventListener('click', () => {
     setZoomAtCenter(draw, Math.min(5, state.view.scale * 1.2))
-    rerender()
+    scheduleRerender()
 })
 document.getElementById('zoom-out')?.addEventListener('click', () => {
     setZoomAtCenter(draw, Math.max(0.2, state.view.scale / 1.2))
-    rerender()
+    scheduleRerender()
 })
 document.getElementById('zoom-reset')?.addEventListener('click', () => {
     fitToWalls(draw, { padding: 240, maxScale: 1.1 })
-    rerender()
+    scheduleRerender()
 })
 
 // -------- init interactions --------
 initViewport(draw)
 initPointer(draw, { newWallId })
-window.addEventListener('planner:changed', rerender)
+initDPad()
+window.addEventListener('planner:changed', scheduleRerender)
+
+// -------- hover highlight (mouse only, throttled, disabled while edit/pan) --------
+function findWallIdFromEventTarget(target) {
+    let el = target
+    while (el && el !== draw.node) {
+        if (el.getAttribute) {
+            const id = el.getAttribute('data-wall-id')
+            if (id) return id
+        }
+        el = el.parentNode
+    }
+    return null
+}
+
+draw.node.addEventListener('pointermove', (e) => {
+    if (isTouchLike) return
+
+    // hover выключаем в draw
+    if (state.mode === 'draw-wall') {
+        if (state.hoverWallId) {
+            state.hoverWallId = null
+            scheduleRerender()
+        }
+        return
+    }
+
+    // ✅ когда редактируем стену/хэндл или панорамируем — hover отключаем
+    if (state.edit || state.ui?.lockPan || state.ui?.dragged) {
+        if (state.hoverWallId) {
+            state.hoverWallId = null
+            scheduleRerender()
+        }
+        return
+    }
+
+    const id = findWallIdFromEventTarget(e.target)
+    if (id !== state.hoverWallId) {
+        state.hoverWallId = id
+        scheduleRerender()
+    }
+})
+
+draw.node.addEventListener('pointerleave', () => {
+    if (state.hoverWallId) {
+        state.hoverWallId = null
+        scheduleRerender()
+    }
+})
 
 // ---------------- SELECT: move + resize ----------------
 function getWallById(id) {
@@ -214,6 +350,9 @@ function startEdit(kind, wallId, mouseWorld) {
     state.ui = state.ui || {}
     state.ui.lockPan = true
 
+    // ✅ пока тащим — hover отключаем, чтобы не подсвечивать другие стены
+    state.hoverWallId = null
+
     state.edit = {
         id: wallId,
         kind, // 'move' | 'a' | 'b'
@@ -223,7 +362,7 @@ function startEdit(kind, wallId, mouseWorld) {
         startA: { ...w.a },
         startB: { ...w.b },
 
-        // строительные (главные)
+        // строительные
         startVA: { ...(w.va || w.a) },
         startVB: { ...(w.vb || w.b) },
     }
@@ -237,7 +376,7 @@ function stopEdit() {
 
 /* ------------------ SNAP + TRIM TO CAPITALS (for edit) ------------------ */
 
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+const clamp2 = (v, a, b) => Math.max(a, Math.min(b, v))
 
 function projectPointToSegmentClamped(p, a, b) {
     const abx = b.x - a.x, aby = b.y - a.y
@@ -250,7 +389,7 @@ function projectPointToSegmentClamped(p, a, b) {
     }
 
     let t = (apx * abx + apy * aby) / ab2
-    t = clamp(t, 0, 1)
+    t = clamp2(t, 0, 1)
     const q = { x: a.x + abx * t, y: a.y + aby * t }
     const d = Math.hypot(p.x - q.x, p.y - q.y)
     return { point: q, d }
@@ -274,7 +413,7 @@ function nearestPointOnCapitals(p) {
         const pr = projectPointToSegmentClamped(p, c.a, c.b)
         if (!best || pr.d < best.d) best = pr
     }
-    return best // { point, d }
+    return best
 }
 
 function snapTrimEndToCapital(end, otherEnd, snapPx = 22) {
@@ -309,37 +448,6 @@ function snapWholeSegmentToCapital(a, b, snapPx = 22) {
     }
 }
 
-/* ------------------ ✅ BUILDING ENDS (va/vb) refresh ------------------ */
-/**
- * После редактирования normal-стены (двиг/ресайз) нам нужно поддерживать:
- * - w.a/w.b = видимая (подрезанная) геометрия
- * - w.va/w.vb = "строительная" геометрия (до оси капитальной), чтобы длины не прыгали
- */
-function refreshBuildingEnds(w, snapPx = 22) {
-    const caps = (state.walls || []).filter(x => x && x.kind === 'capital')
-    if (!caps.length) {
-        w.va = { ...w.a }
-        w.vb = { ...w.b }
-        return
-    }
-
-    const scale = Math.max(1e-6, state.view.scale)
-    const trimLenVisual = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
-    const tolWorld = (snapPx / scale) + trimLenVisual + 2
-
-    const proj = (p) => {
-        let best = null
-        for (const c of caps) {
-            const pr = projectPointToSegmentClamped(p, c.a, c.b)
-            if (!best || pr.d < best.d) best = pr
-        }
-        return best && best.d <= tolWorld ? best.point : p
-    }
-
-    w.va = { ...proj(w.a) }
-    w.vb = { ...proj(w.b) }
-}
-
 function applyEdit(mouseWorld) {
     const ed = state.edit
     if (!ed) return
@@ -367,7 +475,6 @@ function applyEdit(mouseWorld) {
         let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
         let movedB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
 
-        // перенос по сетке (без осей/капитальных/нормалей)
         movedA = smartSnapPoint(movedA, null, {
             ...snapOpts,
             toAxis: false,
@@ -381,6 +488,8 @@ function applyEdit(mouseWorld) {
 
         newVA = movedA
         newVB = movedB
+
+
     }
 
     if (ed.kind === 'a') {
@@ -393,26 +502,25 @@ function applyEdit(mouseWorld) {
         newVB = smartSnapPoint(newVB, newVA, snapOpts)
     }
 
-    // запрет утопить нормал внутрь капитальной
     if (!isSegmentClearOfCapitals(newVA, newVB, CLEAR_FROM_CAPITAL)) return
     if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
 
-    // применяем строительную
     w.va = newVA
     w.vb = newVB
 
-    // нормализуем видимую
     normalizeNormalWall(w, { snapPx: 22, doTrim: true })
 
     w.va = newVA
     w.vb = newVB
 }
 
-
 // pointerdown: выбираем, что делаем
 draw.node.addEventListener('pointerdown', (e) => {
-    if (state.mode !== 'select') return
+    if (state.mode === 'draw-wall') return
     if (e.button !== 0 && e.pointerType === 'mouse') return
+
+    // если уже идёт пан — не стартуем edit
+    if (state.ui?.dragged) return
 
     const p = screenToWorld(draw, e.clientX, e.clientY)
 
@@ -422,8 +530,8 @@ draw.node.addEventListener('pointerdown', (e) => {
 
     if (h) {
         state.selectedWallId = h.id
-        startEdit(h.handle, h.id, p) // 'a'/'b'
-        rerender()
+        startEdit(h.handle, h.id, p)
+        scheduleRerender()
         return
     }
 
@@ -431,33 +539,33 @@ draw.node.addEventListener('pointerdown', (e) => {
     if (id) {
         state.selectedWallId = id
         startEdit('move', id, p)
-        rerender()
+        scheduleRerender()
         return
     }
 
     state.selectedWallId = null
-    rerender()
+    scheduleRerender()
 })
 
 draw.node.addEventListener('pointermove', (e) => {
-    if (state.mode !== 'select') return
+    if (state.mode === 'draw-wall') return
     if (!state.edit) return
     const p = screenToWorld(draw, e.clientX, e.clientY)
     applyEdit(p)
-    rerender()
+    scheduleRerender()
 })
 
 draw.node.addEventListener('pointerup', () => {
-    if (state.mode !== 'select') return
+    if (state.mode === 'draw-wall') return
     if (!state.edit) return
     stopEdit()
-    rerender()
+    scheduleRerender()
 })
 
 draw.node.addEventListener('pointercancel', () => {
     if (!state.edit) return
     stopEdit()
-    rerender()
+    scheduleRerender()
 })
 
 // -------- start --------
@@ -470,10 +578,10 @@ requestAnimationFrame(() => {
 })
 
 // resize (один)
-let raf = 0
+let rafResize = 0
 window.addEventListener('resize', () => {
-    cancelAnimationFrame(raf)
-    raf = requestAnimationFrame(() => {
+    cancelAnimationFrame(rafResize)
+    rafResize = requestAnimationFrame(() => {
         fitToWalls(draw, { padding: 240, maxScale: 1.1 })
         rerender()
     })

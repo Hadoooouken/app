@@ -6,10 +6,12 @@ export const state = {
   previewWall: null,
   view: { scale: 1, offsetX: 0, offsetY: 0 },
   selectedWallId: null,
-  edit: null, // { id, kind:'move'|'a'|'b', startMouse:{x,y}, startA:{x,y}, startB:{x,y} }
+  hoverWallId: null, // ✅ NEW
+  edit: null,
   ui: { dragged: false, lockPan: false, snapPulse: null },
   snapPoint: null,
 }
+
 
 // ---- Units / grid ----
 export const UNIT = 'cm'

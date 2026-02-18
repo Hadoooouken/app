@@ -22,24 +22,18 @@ const DIM_BG_OPACITY = 0.75
 function keyOf(p) {
   return `${Math.round(p.x * 1000)}:${Math.round(p.y * 1000)}`
 }
-
 function unitsToMeters(u) {
   return u / UNITS_PER_M
 }
-
 function formatMeters(m) {
   return `${m.toFixed(2)} м`
 }
-
 function midPoint(a, b) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
 }
-
 function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
-
-// so text not upside down
 function readableRotation(deg) {
   let r = deg
   while (r > 180) r -= 360
@@ -49,7 +43,6 @@ function readableRotation(deg) {
   while (r < -180) r += 360
   return r
 }
-
 function unitNormal(a, b) {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -57,9 +50,7 @@ function unitNormal(a, b) {
   return { nx: -dy / len, ny: dx / len }
 }
 
-
-
-// ✅ bbox for "inside box" label — use capitals a/b (building inner contour)
+// bbox for "inside box" label — use capitals a/b
 function getCapitalBBox(walls) {
   const caps = walls.filter(w => w.kind === 'capital')
   if (!caps.length) return null
@@ -87,11 +78,7 @@ export function fitToWalls(draw, opts = {}) {
   const caps = walls.filter(w => w.kind === 'capital')
   const list = caps.length ? caps : walls
 
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity
-
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const w of list) {
     minX = Math.min(minX, w.a.x, w.b.x)
     minY = Math.min(minY, w.a.y, w.b.y)
@@ -119,14 +106,47 @@ export function fitToWalls(draw, opts = {}) {
   state.view.offsetY = sy - cy * s
 }
 
+/* =========================
+   ✅ Scene cache (NO draw.clear)
+   Grid = SVG pattern (fast)
+========================= */
+let cache = null
+
+function ensureScene(draw) {
+  if (cache && cache.draw === draw) return cache
+
+  // не чистим каждый кадр, создаём один раз
+  const scene = draw.group().id('scene')
+  const gridG = scene.group().id('grid')
+  const wallsG = scene.group().id('walls')
+  const dimsG = scene.group().id('dims')
+  const overlayG = scene.group().id('overlay')
+
+  // GRID via pattern
+  const step = GRID_STEP_VIEW
+  const pattern = draw.pattern(step, step, (add) => {
+    add.line(0, 0, step, 0).stroke({ width: 1, color: '#e3dfd7' })
+    add.line(0, 0, 0, step).stroke({ width: 1, color: '#e3dfd7' })
+  })
+
+  // huge rect covered by pattern
+  const WORLD = 24000
+  const gridRect = gridG
+    .rect(WORLD, WORLD)
+    .move(-WORLD / 2, -WORLD / 2)
+    .fill(pattern)
+    .attr({ 'pointer-events': 'none' })
+
+  cache = { draw, scene, gridG, wallsG, dimsG, overlayG, gridRect, pattern }
+  return cache
+}
+
 export function render(draw) {
-  // ✅ keep call (harmless if you already set ia/ib=a/b),
-  // but it won't affect box because we don't use ia/ib anymore here.
   ensureCapitalInnerFaces()
 
-  draw.clear()
+  const { scene, wallsG, dimsG, overlayG } = ensureScene(draw)
 
-  const scene = draw.group().id('scene')
+  // transform whole scene
   scene.transform({
     translateX: state.view.offsetX,
     translateY: state.view.offsetY,
@@ -135,18 +155,10 @@ export function render(draw) {
 
   const invScale = 1 / Math.max(1e-6, state.view.scale)
 
-  // GRID
-  const grid = scene.group().id('grid')
-  const step = GRID_STEP_VIEW
-  const size = 8000
-  for (let x = -size; x <= size; x += step) {
-    grid.line(x, -size, x, size).stroke({ width: 1, color: '#e3dfd7' })
-  }
-  for (let y = -size; y <= size; y += step) {
-    grid.line(-size, y, size, y).stroke({ width: 1, color: '#e3dfd7' })
-  }
-
-  const wallsG = scene.group().id('walls')
+  // ✅ clear only dynamic layers
+  wallsG.clear()
+  dimsG.clear()
+  overlayG.clear()
 
   const walls = state.walls || []
   const caps = walls.filter(w => w.kind === 'capital')
@@ -165,35 +177,55 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-  // 2) NORMAL + hit lines
+  // 2) NORMAL visible (hover/selected)
   for (const w of normals) {
-    // visible
+    const isSelected = w.id && w.id === state.selectedWallId
+    const isHovered = !isSelected && w.id && w.id === state.hoverWallId
+
+    let stroke = NOR_COLOR
+    let strokeWidth = NOR_W
+    let opacity = 1
+
+    if (isHovered) {
+      stroke = SELECT_COLOR
+      strokeWidth = NOR_W + 2
+      opacity = 0.95
+    }
+    if (isSelected) {
+      stroke = SELECT_COLOR
+      strokeWidth = NOR_W + 4
+      opacity = 1
+    }
+
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
-        width: NOR_W,
-        color: NOR_COLOR,
+        width: strokeWidth,
+        color: stroke,
+        opacity,
         linecap: 'butt',
         linejoin: 'round',
       })
       .attr({ 'pointer-events': 'none' })
+  }
 
-    // hit
-    if (w.id) {
-      wallsG
-        .line(w.a.x, w.a.y, w.b.x, w.b.y)
-        .stroke({
-          width: Math.max(22, NOR_W + 16),
-          color: '#000',
-          opacity: 0,
-          linecap: 'round',
-        })
-        .attr({
-          'pointer-events': 'stroke',
-          'data-kind': 'normal',
-          'data-wall-id': w.id,
-        })
-    }
+  // HIT lines (separate pass)
+  for (const w of normals) {
+    if (!w.id) continue
+
+    wallsG
+      .line(w.a.x, w.a.y, w.b.x, w.b.y)
+      .stroke({
+        width: Math.max(22, NOR_W + 16),
+        color: '#000',
+        opacity: 0,
+        linecap: 'round',
+      })
+      .attr({
+        'pointer-events': 'stroke',
+        'data-kind': 'normal',
+        'data-wall-id': w.id,
+      })
   }
 
   // 3) nodes for NORMAL (close gaps)
@@ -268,14 +300,14 @@ export function render(draw) {
         const r = (6 + 10 * k) * invScale
         const opacity = 0.55 * (1 - k)
 
-        wallsG
+        overlayG
           .circle(r * 2)
           .center(sp.x, sp.y)
           .fill({ color: '#000', opacity: 0 })
           .stroke({ width: 2 * invScale, color: SELECT_COLOR, opacity })
           .attr({ 'pointer-events': 'none' })
 
-        wallsG
+        overlayG
           .circle(3 * invScale * 2)
           .center(sp.x, sp.y)
           .fill({ color: SELECT_COLOR, opacity: 0.9 })
@@ -285,27 +317,22 @@ export function render(draw) {
   }
 
   // ---------- DIMENSIONS ----------
-  const dimsG = scene.group().id('dims')
   dimsG.attr({ 'pointer-events': 'none' })
 
   const fontSize = 12 * invScale
   const pad = 3 * invScale
 
-
   // 1) length label for each wall
   for (const w of walls) {
-    // ✅ позицию/поворот считаем по фактической (видимой) геометрии
-    // позиция/поворот лейбла — по видимой геометрии
     const posA = w.a
     const posB = w.b
 
-    // длина — ВСЕГДА по строительной геометрии
+    // длина — по строительной геометрии
     let lenA, lenB
     if (w.kind !== 'capital') {
       lenA = w.va || w.a
       lenB = w.vb || w.b
     } else {
-      // как у тебя: можно ia/ib, если есть, иначе a/b
       lenA = w.ia || w.a
       lenB = w.ib || w.b
     }
@@ -313,7 +340,6 @@ export function render(draw) {
     const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
     const lenM = unitsToMeters(lenUnits)
     const txt = formatMeters(lenM)
-
 
     const mid = midPoint(posA, posB)
     const ang = readableRotation(angleDeg(posA, posB))
@@ -346,8 +372,7 @@ export function render(draw) {
     g.rotate(ang, lx, ly)
   }
 
-
-  // 2) "inside box" label (bbox by capitals a/b => should be 12.00 × 7.60)
+  // 2) "inside box" label
   {
     const bb = getCapitalBBox(walls)
     if (bb) {
@@ -374,13 +399,11 @@ export function render(draw) {
       t.fill('#111')
 
       const tb = t.bbox()
-
       const bg = g
         .rect(tb.width + pad2 * 2, tb.height + pad2 * 2)
         .fill({ color: '#fff', opacity: 0.9 })
         .radius(rx)
 
-      // ✅ надежно позиционируем
       bg.center(cx, y)
       t.center(cx, y)
       bg.back()
@@ -390,7 +413,7 @@ export function render(draw) {
   // ---------- draft / preview ----------
   if (state.draft) {
     const { a, b } = state.draft
-    scene.line(a.x, a.y, b.x, b.y).stroke({
+    overlayG.line(a.x, a.y, b.x, b.y).stroke({
       width: 6,
       color: SELECT_COLOR,
       dasharray: '10 8',
@@ -400,7 +423,7 @@ export function render(draw) {
 
   if (state.previewWall) {
     const { a, b, ok } = state.previewWall
-    scene.line(a.x, a.y, b.x, b.y).stroke({
+    overlayG.line(a.x, a.y, b.x, b.y).stroke({
       width: 6,
       color: ok ? SELECT_COLOR : CURSOR_INVALID,
       dasharray: '10 8',
@@ -408,7 +431,7 @@ export function render(draw) {
     })
   }
 
-  // ---------- CURSOR DOT (idle/valid/invalid) ----------
+  // ---------- CURSOR DOT ----------
   if (
     state.mode === 'draw-wall' &&
     state.snapPoint &&
@@ -421,14 +444,14 @@ export function render(draw) {
     const r = 6 * invScale
     const strokeW = 2 * invScale
 
-    scene
+    overlayG
       .circle(r * 2 + strokeW * 2)
       .center(state.snapPoint.x, state.snapPoint.y)
       .fill({ color: '#fff', opacity: 0.9 })
       .stroke({ width: 0 })
       .attr({ 'pointer-events': 'none' })
 
-    scene
+    overlayG
       .circle(r * 2)
       .center(state.snapPoint.x, state.snapPoint.y)
       .fill({ color, opacity: 0.95 })

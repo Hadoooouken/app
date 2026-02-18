@@ -1,4 +1,3 @@
-// interaction/viewport.js
 import { state } from '../engine/state.js'
 import { render } from '../renderer/render.js'
 
@@ -17,9 +16,14 @@ export function initViewport(draw) {
   const THRESHOLD = 6 // px
 
   node.addEventListener('pointerdown', (e) => {
-    if (state.mode !== 'select') return
+    // ❌ в режиме рисования — пан не нужен
+    if (state.mode === 'draw-wall') return
     if (state.ui.lockPan) return
     if (e.button !== 0 && e.pointerType === 'mouse') return
+
+    // ✅ если нажали на стену (hit-line) — НЕ панорамируем
+    const hitWall = e.target?.closest?.('[data-wall-id]')
+    if (hitWall) return
 
     isDown = true
     isDragging = false

@@ -183,6 +183,108 @@ body {
 }
 
 /* =========================
+   DPAD (move controls)
+========================= */
+
+.dpad {
+  position: fixed;
+  top: 86px; /* чтобы было под статусом/вверху как на скрине */
+  right: 16px;
+  z-index: 10;
+
+  display: grid;
+  grid-template-columns: 52px 52px 52px;
+  grid-template-rows: 52px 52px 52px;
+  gap: 10px;
+
+  /* чтобы тач не скроллил/не выделял */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.dpad__btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: #ffffff;
+  color: #04202b;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition:
+    transform 0.06s ease,
+    filter 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.dpad__btn:focus {
+  outline: none;
+}
+.dpad__btn:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent), #fff 40%);
+}
+
+#walls line {
+  transition:
+    stroke 0.3s ease,
+    stroke-width 0.3s ease,
+    opacity 0.3s ease;
+}
+
+/* hover для десктопа */
+@media (hover: hover) {
+  .dpad__btn:hover {
+    filter: brightness(0.96);
+  }
+}
+
+/* active для тача/мыши — не залипает, потому что :active */
+.dpad__btn:active {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.92);
+}
+
+/* если будем добавлять класс руками (на всякий) */
+.dpad__btn.is-pressed {
+  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.92);
+}
+
+.dpad__btn--up {
+  grid-column: 2;
+  grid-row: 1;
+}
+.dpad__btn--left {
+  grid-column: 1;
+  grid-row: 2;
+}
+.dpad__btn--center {
+  grid-column: 2;
+  grid-row: 2;
+  background-color: #ffffff;
+  color: #111;
+}
+.dpad__btn--right {
+  grid-column: 3;
+  grid-row: 2;
+}
+.dpad__btn--down {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+@media (min-width: 1024px) {
+  .dpad {
+    top: 24px; /* на десктопе можно выше */
+    right: 24px;
+  }
+}
+
+/* =========================
    TABLET 768+
 ========================= */
 
