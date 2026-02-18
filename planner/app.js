@@ -34,6 +34,7 @@ import {
 
 const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
+const isTouchLike = matchMedia('(pointer: coarse)').matches
 
 // -------- id generator for user walls --------
 let wallAutoId = 10000
@@ -129,7 +130,10 @@ function setMode(mode) {
     state.ui.lockPan = false
 
     if (mode === 'draw-wall') {
-        placeCursorAtViewportCenter()
+        if (isTouchLike) {
+            state.snapPoint = null
+            state.cursorState = 'idle'
+        }
     } else {
         state.cursorState = 'idle'
         state.snapPoint = null
@@ -204,25 +208,25 @@ function getWallById(id) {
 }
 
 function startEdit(kind, wallId, mouseWorld) {
-  const w = getWallById(wallId)
-  if (!w || w.kind === 'capital') return
+    const w = getWallById(wallId)
+    if (!w || w.kind === 'capital') return
 
-  state.ui = state.ui || {}
-  state.ui.lockPan = true
+    state.ui = state.ui || {}
+    state.ui.lockPan = true
 
-  state.edit = {
-    id: wallId,
-    kind, // 'move' | 'a' | 'b'
-    startMouse: { ...mouseWorld },
+    state.edit = {
+        id: wallId,
+        kind, // 'move' | 'a' | 'b'
+        startMouse: { ...mouseWorld },
 
-    // видимые
-    startA: { ...w.a },
-    startB: { ...w.b },
+        // видимые
+        startA: { ...w.a },
+        startB: { ...w.b },
 
-    // строительные (главные)
-    startVA: { ...(w.va || w.a) },
-    startVB: { ...(w.vb || w.b) },
-  }
+        // строительные (главные)
+        startVA: { ...(w.va || w.a) },
+        startVB: { ...(w.vb || w.b) },
+    }
 }
 
 function stopEdit() {
@@ -337,71 +341,71 @@ function refreshBuildingEnds(w, snapPx = 22) {
 }
 
 function applyEdit(mouseWorld) {
-  const ed = state.edit
-  if (!ed) return
-  const w = getWallById(ed.id)
-  if (!w) return
+    const ed = state.edit
+    if (!ed) return
+    const w = getWallById(ed.id)
+    if (!w) return
 
-  const dx = mouseWorld.x - ed.startMouse.x
-  const dy = mouseWorld.y - ed.startMouse.y
+    const dx = mouseWorld.x - ed.startMouse.x
+    const dy = mouseWorld.y - ed.startMouse.y
 
-  let newVA = { ...ed.startVA }
-  let newVB = { ...ed.startVB }
+    let newVA = { ...ed.startVA }
+    let newVB = { ...ed.startVB }
 
-  const snapOpts = {
-    grid: GRID_STEP_SNAP,
-    snapPx: 14,
-    axisPx: 10,
-    toGrid: true,
-    toPoints: true,
-    toAxis: true,
-    toCapital: true,
-    toNormals: true,
-  }
-
-  if (ed.kind === 'move') {
-    let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
-    let movedB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
-
-    // перенос по сетке (без осей/капитальных/нормалей)
-    movedA = smartSnapPoint(movedA, null, {
-      ...snapOpts,
-      toAxis: false,
-      toCapital: false,
-      toNormals: false,
-    })
-    movedB = {
-      x: movedA.x + (ed.startVB.x - ed.startVA.x),
-      y: movedA.y + (ed.startVB.y - ed.startVA.y),
+    const snapOpts = {
+        grid: GRID_STEP_SNAP,
+        snapPx: 14,
+        axisPx: 10,
+        toGrid: true,
+        toPoints: true,
+        toAxis: true,
+        toCapital: true,
+        toNormals: true,
     }
 
-    newVA = movedA
-    newVB = movedB
-  }
+    if (ed.kind === 'move') {
+        let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+        let movedB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
 
-  if (ed.kind === 'a') {
-    newVA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
-    newVA = smartSnapPoint(newVA, newVB, snapOpts)
-  }
+        // перенос по сетке (без осей/капитальных/нормалей)
+        movedA = smartSnapPoint(movedA, null, {
+            ...snapOpts,
+            toAxis: false,
+            toCapital: false,
+            toNormals: false,
+        })
+        movedB = {
+            x: movedA.x + (ed.startVB.x - ed.startVA.x),
+            y: movedA.y + (ed.startVB.y - ed.startVA.y),
+        }
 
-  if (ed.kind === 'b') {
-    newVB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
-    newVB = smartSnapPoint(newVB, newVA, snapOpts)
-  }
+        newVA = movedA
+        newVB = movedB
+    }
 
-  // запрет утопить нормал внутрь капитальной
-  if (!isSegmentClearOfCapitals(newVA, newVB, CLEAR_FROM_CAPITAL)) return
-  if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
+    if (ed.kind === 'a') {
+        newVA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+        newVA = smartSnapPoint(newVA, newVB, snapOpts)
+    }
 
-  // применяем строительную
-  w.va = newVA
-  w.vb = newVB
+    if (ed.kind === 'b') {
+        newVB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
+        newVB = smartSnapPoint(newVB, newVA, snapOpts)
+    }
 
-  // нормализуем видимую
-  normalizeNormalWall(w, { snapPx: 22, doTrim: true })
+    // запрет утопить нормал внутрь капитальной
+    if (!isSegmentClearOfCapitals(newVA, newVB, CLEAR_FROM_CAPITAL)) return
+    if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
 
-  w.va = newVA
-  w.vb = newVB
+    // применяем строительную
+    w.va = newVA
+    w.vb = newVB
+
+    // нормализуем видимую
+    normalizeNormalWall(w, { snapPx: 22, doTrim: true })
+
+    w.va = newVA
+    w.vb = newVB
 }
 
 
