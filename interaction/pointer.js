@@ -257,14 +257,14 @@ export function initPointer(draw, { newWallId } = {}) {
 
             // ✅ Не даём ставить A в зоне, где B всё равно будет запрещён
             // (проверяем “точку”, как минимальный сегмент)
-          // ✅ A можно ставить везде (включая на капитальных и рядом)
-// ограничения проверяем уже на сегменте A->B
-firstPoint = p
-state.cursorState = 'valid'
-state.previewWall = { a: firstPoint, b: p, ok: true }
-suppressPreview = false
-scheduleRender()
-return
+            // ✅ A можно ставить везде (включая на капитальных и рядом)
+            // ограничения проверяем уже на сегменте A->B
+            firstPoint = p
+            state.cursorState = 'valid'
+            state.previewWall = { a: firstPoint, b: p, ok: true }
+            suppressPreview = false
+            scheduleRender()
+            return
 
 
             firstPoint = p
