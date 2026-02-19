@@ -30,11 +30,16 @@
   </aside>
 
   <!-- RIGHT ZOOM -->
-  <div class="zoom">
-    <button class="zoom__btn" id="zoom-in" type="button">＋</button>
-    <button class="zoom__btn" id="zoom-out" type="button">−</button>
-    <button class="zoom__btn" id="zoom-reset" type="button">⦿</button>
-  </div>
+<div class="zoom">
+  <button class="zoom__btn" id="undo" type="button" title="Undo (Ctrl/⌘+Z)" aria-label="Undo">↶</button>
+  <button class="zoom__btn" id="redo" type="button" title="Redo (Ctrl/⌘+Y or Ctrl/⌘+Shift+Z)" aria-label="Redo">↷</button>
+
+  <div class="zoom__sep" aria-hidden="true"></div>
+
+  <button class="zoom__btn" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">＋</button>
+  <button class="zoom__btn" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+</div>
+
   <!-- DPAD (move) -->
   <div class="dpad" id="dpad">
     <button class="dpad__btn dpad__btn--up" data-pan="up" type="button" aria-label="Up">↑</button>

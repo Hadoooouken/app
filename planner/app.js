@@ -215,15 +215,15 @@ function setMode(mode) {
     state.ui = state.ui || {}
     state.ui.lockPan = false
 
-if (mode === 'draw-wall') {
-  state.selectedWallId = null
-  state.hoverWallId = null
+    if (mode === 'draw-wall') {
+        state.selectedWallId = null
+        state.hoverWallId = null
 
-  // ✅ и на мобиле, и на десктопе — НЕ ставим точку в центр
-  state.snapPoint = null
-  state.cursorState = 'idle'
-}
-else {
+        // ✅ и на мобиле, и на десктопе — НЕ ставим точку в центр
+        state.snapPoint = null
+        state.cursorState = 'idle'
+    }
+    else {
         state.cursorState = 'idle'
         state.snapPoint = null
     }
@@ -291,6 +291,7 @@ initDPad()
 window.addEventListener('planner:changed', scheduleRerender)
 
 // -------- hover highlight (mouse only, throttled, disabled while edit/pan) --------
+
 function findWallIdFromEventTarget(target) {
     let el = target
     while (el && el !== draw.node) {
@@ -473,7 +474,6 @@ function applyEdit(mouseWorld) {
 
     if (ed.kind === 'move') {
         let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
-        let movedB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
 
         movedA = smartSnapPoint(movedA, null, {
             ...snapOpts,
@@ -481,15 +481,12 @@ function applyEdit(mouseWorld) {
             toCapital: false,
             toNormals: false,
         })
-        movedB = {
-            x: movedA.x + (ed.startVB.x - ed.startVA.x),
-            y: movedA.y + (ed.startVB.y - ed.startVA.y),
-        }
+
+        const offX = ed.startVB.x - ed.startVA.x
+        const offY = ed.startVB.y - ed.startVA.y
 
         newVA = movedA
-        newVB = movedB
-
-
+        newVB = { x: movedA.x + offX, y: movedA.y + offY }
     }
 
     if (ed.kind === 'a') {
@@ -502,17 +499,44 @@ function applyEdit(mouseWorld) {
         newVB = smartSnapPoint(newVB, newVA, snapOpts)
     }
 
-    if (!isSegmentClearOfCapitals(newVA, newVB, CLEAR_FROM_CAPITAL)) return
+    // ✅ сначала базовая проверка по строительной геометрии (пересечения и т.п.)
     if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
 
+    // ✅ сохраняем текущее состояние стены для отката
+    const old = {
+        a: { ...w.a },
+        b: { ...w.b },
+        va: { ...(w.va || w.a) },
+        vb: { ...(w.vb || w.b) },
+    }
+
+    // ✅ применяем строительную геометрию
     w.va = newVA
     w.vb = newVB
 
+    // ✅ нормализуем (тут появляется визуальный trim a/b)
     normalizeNormalWall(w, { snapPx: 22, doTrim: true })
 
+    // ✅ clear проверяем ПОСЛЕ normalize по ВИДИМОЙ геометрии
+    const clearOpts =
+        (ed.kind === 'move')
+            ? { endGuard: 0, samples: 32 }      // при переносе проверяем даже концы
+            : { endGuard: 0.06, samples: 32 }   // при ресайзе оставляем “пристыковку”
+
+    if (!isSegmentClearOfCapitals(w.a, w.b, CLEAR_FROM_CAPITAL, clearOpts)) {
+        // ❌ нельзя — откатываем
+        w.a = old.a
+        w.b = old.b
+        w.va = old.va
+        w.vb = old.vb
+        return
+    }
+
+    // ✅ всё ок — фиксируем: va/vb должны соответствовать newVA/newVB
     w.va = newVA
     w.vb = newVB
 }
+
 
 // pointerdown: выбираем, что делаем
 draw.node.addEventListener('pointerdown', (e) => {

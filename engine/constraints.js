@@ -49,15 +49,15 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     }
 
     // 3) axis (если есть fromPoint)
-  // 3) axis (если есть fromPoint)
-if (toAxis && fromPoint) {
-    // если включена сетка — свободную координату тоже к сетке
-    const snapY = (toGrid && grid > 0) ? (Math.round(p.y / grid) * grid) : p.y
-    const snapX = (toGrid && grid > 0) ? (Math.round(p.x / grid) * grid) : p.x
+    // 3) axis (если есть fromPoint)
+    if (toAxis && fromPoint) {
+        // если включена сетка — свободную координату тоже к сетке
+        const snapY = (toGrid && grid > 0) ? (Math.round(p.y / grid) * grid) : p.y
+        const snapX = (toGrid && grid > 0) ? (Math.round(p.x / grid) * grid) : p.x
 
-    if (Math.abs(p.x - fromPoint.x) <= axisWorld) consider({ x: fromPoint.x, y: snapY })
-    if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: snapX, y: fromPoint.y })
-}
+        if (Math.abs(p.x - fromPoint.x) <= axisWorld) consider({ x: fromPoint.x, y: snapY })
+        if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: snapX, y: fromPoint.y })
+    }
 
 
     // 4) T-стык: проекция на normal сегменты (только внутренняя часть)
@@ -97,10 +97,24 @@ function collectSnapPoints() {
     const pts = []
     for (const w of (state.walls || [])) {
         if (!w) continue
-        pts.push(w.a, w.b)
+
+        // capital — как есть
+        if (w.kind === 'capital') {
+            pts.push(w.a, w.b)
+            continue
+        }
+
+        // normal — добавляем и видимые, и строительные точки
+        const a = w.a
+        const b = w.b
+        const va = w.va || w.a
+        const vb = w.vb || w.b
+
+        pts.push(a, b, va, vb)
     }
     return pts
 }
+
 
 function dist(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y)
@@ -215,7 +229,7 @@ export function isSegmentAllowed(a, b, opts = {}) {
         }
     }
 
-    // 2) запрет X-пересечений (normal-normal)
+    // 2) запрет пересечений (normal-normal)
     const tolWorld = tolPx / scale
 
     for (const w of (state.walls || [])) {
@@ -223,7 +237,11 @@ export function isSegmentAllowed(a, b, opts = {}) {
         if (w.kind === 'capital') continue
         if (ignoreWallId && w.id === ignoreWallId) continue
 
-        const hit = segmentIntersectionParams(a, b, w.a, w.b)
+        // ✅ для normal берём строительную ось (если есть)
+        const wa = w.va || w.a
+        const wb = w.vb || w.b
+
+        const hit = segmentIntersectionParams(a, b, wa, wb)
         if (!hit) continue
 
         // коллинеарное наложение — запретим, если оно "заметное"
@@ -232,13 +250,17 @@ export function isSegmentAllowed(a, b, opts = {}) {
             continue
         }
 
-        const { t, u } = hit
+        // ✅ точечное пересечение
+        const ip = hit.p
 
-        const tIsEnd = (t <= tolT(tolWorld, a, b) || t >= 1 - tolT(tolWorld, a, b))
-        const uIsEnd = (u <= tolT(tolWorld, w.a, w.b) || u >= 1 - tolT(tolWorld, w.a, w.b))
+        // ✅ если пересечение рядом с концом НОВОГО сегмента — разрешаем (стык)
+        const nearNewA = Math.hypot(ip.x - a.x, ip.y - a.y) <= tolWorld
+        const nearNewB = Math.hypot(ip.x - b.x, ip.y - b.y) <= tolWorld
+        if (nearNewA || nearNewB) continue
 
-        // если пересеклись “внутри-внутри” => X (запрещаем)
-        if (!tIsEnd && !uIsEnd) return false
+        // ❌ иначе новый сегмент пересёк существующую стену "внутри себя"
+        // даже если это попало в узел (конец) существующей стены — запрещаем
+        return false
     }
 
     return true
