@@ -8,6 +8,14 @@ import {
     OVERLAP,
 } from '../engine/state.js'
 
+import {
+    historyCommit,
+    historyBegin,
+    historyEnd,
+    undo,
+    redo,
+} from '../engine/history.js'
+
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
 import { loadStudioTemplate } from './templates.js'
@@ -46,6 +54,9 @@ const btnWall = document.getElementById('btn-wall')
 const btnTrash = document.getElementById('btn-trash')
 const hint = document.getElementById('hint')
 const status = document.getElementById('status')
+
+// -------- undo/redo buttons --------
+
 
 // ---------------- render throttle ----------------
 let raf = 0
@@ -256,10 +267,13 @@ function deleteSelectedWall() {
     if (idx === -1) return
     if (state.walls[idx].kind === 'capital') return
 
+    historyCommit('delete')    // ✅
     state.walls.splice(idx, 1)
+
     state.selectedWallId = null
     scheduleRerender()
 }
+
 
 window.addEventListener('keydown', (e) => {
     if (e.key !== 'Delete' && e.key !== 'Backspace') return
@@ -267,6 +281,28 @@ window.addEventListener('keydown', (e) => {
     if (tag === 'input' || tag === 'textarea') return
     deleteSelectedWall()
 })
+
+window.addEventListener('keydown', (e) => {
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+    const mod = isMac ? e.metaKey : e.ctrlKey
+
+    if (!mod) return
+
+    // Ctrl/Cmd+Z
+    if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        if (undo()) rerender()
+        return
+    }
+
+    // Ctrl/Cmd+Shift+Z  (и для винды часто Ctrl+Y)
+    if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        if (redo()) rerender()
+        return
+    }
+})
+
 
 btnTrash?.addEventListener('click', deleteSelectedWall)
 
@@ -289,6 +325,42 @@ initViewport(draw)
 initPointer(draw, { newWallId })
 initDPad()
 window.addEventListener('planner:changed', scheduleRerender)
+
+// -------- undo/redo buttons --------
+const btnUndo = document.getElementById('undo')
+const btnRedo = document.getElementById('redo')
+
+function applyUndo() {
+    // на всякий: выходим из drag/edit
+    state.edit = null
+    state.previewWall = null
+    state.ui = state.ui || {}
+    state.ui.lockPan = false
+    state.selectedWallId = null
+
+    if (undo()) rerender()
+}
+
+function applyRedo() {
+    state.edit = null
+    state.previewWall = null
+    state.ui = state.ui || {}
+    state.ui.lockPan = false
+    state.selectedWallId = null
+
+    if (redo()) rerender()
+}
+
+btnUndo?.addEventListener('click', (e) => {
+    e.preventDefault()
+    applyUndo()
+})
+
+btnRedo?.addEventListener('click', (e) => {
+    e.preventDefault()
+    applyRedo()
+})
+
 
 // -------- hover highlight (mouse only, throttled, disabled while edit/pan) --------
 
@@ -348,10 +420,10 @@ function startEdit(kind, wallId, mouseWorld) {
     const w = getWallById(wallId)
     if (!w || w.kind === 'capital') return
 
+    historyBegin(kind) // ✅ один undo на весь drag
+
     state.ui = state.ui || {}
     state.ui.lockPan = true
-
-    // ✅ пока тащим — hover отключаем, чтобы не подсвечивать другие стены
     state.hoverWallId = null
 
     state.edit = {
@@ -373,7 +445,10 @@ function stopEdit() {
     state.edit = null
     state.ui = state.ui || {}
     state.ui.lockPan = false
+
+    historyEnd() // ✅ фиксируем транзакцию
 }
+
 
 /* ------------------ SNAP + TRIM TO CAPITALS (for edit) ------------------ */
 

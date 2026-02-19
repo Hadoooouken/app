@@ -1,4 +1,6 @@
 // interaction/pointer.js
+import { historyCommit } from '../engine/history.js'
+
 import {
     state,
     GRID_STEP_SNAP,
@@ -340,9 +342,10 @@ export function initPointer(draw, { newWallId } = {}) {
                 resetAll()
                 return
             }
+   historyCommit('add wall')
+state.walls.push(newWall)
+resetAll()
 
-            state.walls.push(newWall)
-            resetAll()
             return
         }
 
@@ -394,9 +397,9 @@ export function initPointer(draw, { newWallId } = {}) {
             cancelInvalidB(p, e.pointerType)
             return
         }
-
+        historyCommit('add wall')
         state.walls.push(newWall)
-
+        
         // after commit
         firstPoint = null
         state.previewWall = null

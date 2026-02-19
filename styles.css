@@ -7,6 +7,21 @@
   --text: #1f2937;
   --muted: rgba(31, 41, 55, 0.65);
   --radius: 16px;
+
+  /* ✅ базовые отступы + safe-area */
+  --pad: 16px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* ✅ размеры контролов на мобиле */
+  --btn: 44px;
+  --btn-r: 14px;
+  --gap: 10px;
+
+  /* ✅ ширина правого стека (3 кнопки dpad) */
+  --stack-w: calc(var(--btn) * 3 + var(--gap) * 2);
 }
 
 /* RESET */
@@ -18,6 +33,7 @@ body {
   height: 100%;
   margin: 0;
 }
+
 body {
   font-family:
     system-ui,
@@ -30,33 +46,85 @@ body {
   overflow: hidden;
 }
 
-html,
-body {
-  height: 100%;
-  overflow: hidden;
-}
 #workspace {
   width: 100vw;
   height: 100vh;
 }
 
-/* на рабочую область и UI вокруг неё */
-
 /* WORKSPACE */
 .workspace {
   position: fixed;
   inset: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* чтобы цифры/подписи не выделялись при drag */
+.workspace,
+.workspace * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* отключает double-tap zoom на UI, но не ломает клики */
+#workspace,
+.workspace,
+.panel,
+.zoom,
+.dpad,
+.status {
+  touch-action: manipulation;
 }
 
 /* =========================
    PANEL (MOBILE BASE)
 ========================= */
 
+button,
+.zoom__btn,
+.dpad__btn,
+.tool {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid var(--stroke);
+  background: var(--panel);
+  color: #111; /* ✅ принудительно НЕ синий */
+  font: inherit; /* ✅ не подхватывать системные символы */
+  line-height: 1; /* ✅ чтобы значки не “прыгали” */
+  text-align: center;
+}
+
+/* иногда Safari красит именно текст внутри */
+.zoom__btn,
+.zoom__btn * {
+  color: #111;
+}
+
+/* если где-то случайно стала ссылкой/тап-хайлайт */
+.zoom__btn {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* чтобы ↶↷ выглядели “как надо”, можно зафиксить начертание */
+.zoom__btn {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.zoom__btn .icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  margin: 0 auto;
+  color: #111; /* берется currentColor */
+}
+
 .panel {
   position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
+  left: calc(var(--pad) + var(--safe-left));
+  right: calc(var(--pad) + var(--safe-right));
+  bottom: calc(var(--pad) + var(--safe-bottom));
   padding: 14px;
   background: var(--panel);
   border: 1px solid var(--stroke);
@@ -72,10 +140,8 @@ body {
 
 .panel__title,
 .panel__hint {
-  display: none; /* на мобиле скрываем */
+  display: none;
 }
-
-/* TOOL BUTTONS */
 
 .tool {
   flex: 1;
@@ -98,41 +164,62 @@ body {
 }
 
 .tool__label {
-  display: none; /* текст скрыт на маленьком */
+  display: none;
+}
+
+.tool.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tool.is-danger {
+  background: #ff3b30;
+  color: #fff;
+}
+
+/* кнопки — центрируем контент (и текст, и иконки) */
+.zoom__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* размер SVG-иконки внутри кнопки */
+.zoom__icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* iOS Safari: не даём кнопкам менять вид и красить контент */
+button,
+.zoom__btn,
+.dpad__btn,
+.tool {
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* на всякий случай фиксируем цвет внутри кнопки */
+.zoom__btn,
+.zoom__btn * {
+  color: #111;
+  fill: currentColor;
+  stroke: currentColor;
 }
 
 /* =========================
-   ZOOM (mobile)
+   STATUS (TOP)
+   ✅ не лезет под правые кнопки
 ========================= */
-
-.zoom {
-  position: fixed;
-  right: 16px;
-  top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 10;
-}
-
-.zoom__btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  border: 1px solid var(--stroke);
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  font-size: 18px;
-}
-
-/* STATUS */
 
 .status {
   position: fixed;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(var(--pad) + var(--safe-top));
+  left: calc(var(--pad) + var(--safe-left));
+  right: calc(var(--pad) + var(--safe-right) + var(--stack-w) + 12px);
   padding: 8px 14px;
   background: var(--panel);
   border: 1px solid var(--stroke);
@@ -140,77 +227,81 @@ body {
   font-size: 12px;
   color: var(--muted);
   z-index: 10;
-}
 
-/* чтобы цифры/подписи не выделялись при drag */
-.workspace,
-.workspace * {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* чтобы тач не превращался в скролл/выделение */
-.workspace {
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-#workspace,
-.workspace,
-.panel,
-.zoom {
-  touch-action: manipulation; /* отключает double-tap zoom, оставляет скролл где он есть */
-}
-
-.tool.is-disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.tool.is-danger {
-  background: #ff3b30;
-  color: #fff;
-}
-
-.tool.is-disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.tool.is-danger {
-  background: #ff3b30;
-  color: #fff;
+  /* ✅ красивое обрезание длинного текста */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* =========================
-   DPAD (move controls)
+   ZOOM (RIGHT TOP)
+========================= */
+
+.zoom {
+  position: fixed;
+  right: calc(var(--pad) + var(--safe-right));
+  top: calc(var(--pad) + var(--safe-top));
+  display: grid;
+  grid-auto-rows: var(--btn);
+  gap: var(--gap);
+  z-index: 10;
+}
+
+.zoom__btn {
+  width: var(--btn);
+  height: var(--btn);
+  border-radius: var(--btn-r);
+  border: 1px solid var(--stroke);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.zoom__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.zoom__sep {
+  width: 1px;
+  height: 18px;
+  opacity: 0.25;
+  background: currentColor;
+  margin: 2px auto;
+}
+
+/* =========================
+   DPAD (RIGHT, BELOW ZOOM)
+   ✅ гарантированно ниже zoom, без налезаний
 ========================= */
 
 .dpad {
   position: fixed;
-  top: 86px; /* чтобы было под статусом/вверху как на скрине */
-  right: 16px;
+  right: calc(var(--pad) + var(--safe-right));
+  top: calc(var(--pad) + var(--safe-top) + (var(--btn) * 4) + (var(--gap) * 3) + 14px);
   z-index: 10;
 
   display: grid;
-  grid-template-columns: 52px 52px 52px;
-  grid-template-rows: 52px 52px 52px;
-  gap: 10px;
+  grid-template-columns: var(--btn) var(--btn) var(--btn);
+  grid-template-rows: var(--btn) var(--btn) var(--btn);
+  gap: var(--gap);
 
-  /* чтобы тач не скроллил/не выделял */
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
 }
 
 .dpad__btn {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: var(--btn);
+  height: var(--btn);
+  border-radius: var(--btn-r);
   border: 1px solid rgba(0, 0, 0, 0.08);
   background-color: #ffffff;
   color: #04202b;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: var(--shadow);
@@ -221,34 +312,11 @@ body {
   outline: none;
 }
 
-.dpad__btn:focus {
-  outline: none;
-}
-.dpad__btn:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent), #fff 40%);
-}
-
-#walls line {
-  transition:
-    stroke 0.3s ease,
-    stroke-width 0.3s ease,
-    opacity 0.3s ease;
-}
-
-/* hover для десктопа */
-@media (hover: hover) {
-  .dpad__btn:hover {
-    filter: brightness(0.96);
-  }
-}
-
-/* active для тача/мыши — не залипает, потому что :active */
 .dpad__btn:active {
   transform: translateY(1px) scale(0.98);
   filter: brightness(0.92);
 }
 
-/* если будем добавлять класс руками (на всякий) */
 .dpad__btn.is-pressed {
   transform: translateY(1px) scale(0.98);
   filter: brightness(0.92);
@@ -265,7 +333,6 @@ body {
 .dpad__btn--center {
   grid-column: 2;
   grid-row: 2;
-  background-color: #ffffff;
   color: #111;
 }
 .dpad__btn--right {
@@ -277,24 +344,16 @@ body {
   grid-row: 3;
 }
 
-.zoom__btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  pointer-events: none;
+#walls line {
+  transition:
+    stroke 0.3s ease,
+    stroke-width 0.3s ease,
+    opacity 0.3s ease;
 }
 
-.zoom__sep {
-  width: 1px;
-  height: 22px;
-  opacity: 0.25;
-  background: currentColor;
-  margin: 6px 0;
-}
-
-@media (min-width: 1024px) {
-  .dpad {
-    top: 24px; /* на десктопе можно выше */
-    right: 24px;
+@media (hover: hover) {
+  .dpad__btn:hover {
+    filter: brightness(0.96);
   }
 }
 
@@ -307,6 +366,7 @@ body {
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
+    right: auto;
     width: 420px;
   }
 
@@ -316,6 +376,10 @@ body {
 
   .status {
     font-size: 13px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+    max-width: min(760px, calc(100vw - 320px));
   }
 }
 
@@ -328,6 +392,7 @@ body {
     top: 24px;
     bottom: auto;
     left: 24px;
+    right: auto;
     transform: none;
     width: 240px;
     flex-direction: column;
@@ -357,11 +422,17 @@ body {
     bottom: 24px;
     top: auto;
   }
+  .dpad {
+    top: 24px;
+    right: 24px;
+  }
 
   .status {
     bottom: 24px;
     top: auto;
-    font-size: 13px;
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
   }
 }
 
@@ -374,7 +445,6 @@ body {
     width: 260px;
     padding: 18px;
   }
-
   .tool {
     padding: 14px 16px;
     font-size: 15px;
@@ -386,25 +456,16 @@ body {
     font-size: 20px;
   }
 
+  :root {
+    --btn: 52px;
+    --gap: 10px;
+    --btn-r: 14px;
+  }
+  .dpad__btn {
+    font-size: 22px;
+  }
+
   .status {
     font-size: 14px;
-  }
-}
-
-/* =========================
-   ULTRA WIDE 1920+
-========================= */
-
-@media (min-width: 1920px) {
-  .panel {
-    width: 280px;
-  }
-
-  .tool {
-    font-size: 16px;
-  }
-
-  .status {
-    font-size: 15px;
   }
 }
