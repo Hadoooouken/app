@@ -1,20 +1,14 @@
 // planner/app.js
 import {
-    state,
-    GRID_STEP_SNAP,
-    CLEAR_FROM_CAPITAL,
-    CAP_W,
-    NOR_W,
-    OVERLAP,
+  state,
+  GRID_STEP_SNAP,
+  CLEAR_FROM_CAPITAL,
+  CAP_W,
+  NOR_W,
+  OVERLAP,
 } from '../engine/state.js'
 
-import {
-    historyCommit,
-    historyBegin,
-    historyEnd,
-    undo,
-    redo,
-} from '../engine/history.js'
+import { historyCommit, historyBegin, historyEnd, undo, redo } from '../engine/history.js'
 
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
@@ -22,21 +16,17 @@ import { loadStudioTemplate } from './templates.js'
 import { initViewport } from '../interaction/viewport.js'
 import { initPointer } from '../interaction/pointer.js'
 import { pickNormalWallAt, pickWallHandleAt } from '../engine/pick.js'
-import {
-    smartSnapPoint,
-    isSegmentAllowed,
-    isSegmentClearOfCapitals,
-} from '../engine/constraints.js'
+import { smartSnapPoint, isSegmentAllowed, isSegmentClearOfCapitals } from '../engine/constraints.js'
 import { normalizeNormalWall } from '../engine/normalize-wall.js'
 
 // ✅ метрики
 import {
-    getSelectedWall,
-    wallLengthM,
-    totalNormalLengthM,
-    capitalAreaM2,
-    fmtM,
-    fmtM2,
+  getSelectedWall,
+  wallLengthM,
+  totalNormalLengthM,
+  capitalAreaM2,
+  fmtM,
+  fmtM2,
 } from '../engine/metrics.js'
 
 const workspace = document.getElementById('workspace')
@@ -49,40 +39,150 @@ const isTouchLike = matchMedia('(pointer: coarse)').matches
 let wallAutoId = 10000
 const newWallId = () => `u${Date.now()}_${wallAutoId++}`
 
+// -------- id generator for doors --------
+const newDoorId = () => `d${Date.now()}_${Math.random().toString(16).slice(2)}`
+
 // -------- UI refs --------
 const btnWall = document.getElementById('btn-wall')
 const btnTrash = document.getElementById('btn-trash')
+const btnDoor = document.getElementById('btn-door')
 const hint = document.getElementById('hint')
 const status = document.getElementById('status')
+
+function panBy(dx, dy) {
+  state.view.offsetX += dx
+  state.view.offsetY += dy
+  rerender()
+}
+
+function initDPad() {
+  const root = document.getElementById('dpad')
+  if (!root) return
+
+  const STEP = 40
+  const FIRST_DELAY = 140
+  const REPEAT_MS = 30
+
+  let timer = null
+  let repeater = null
+
+  const dirToDelta = (dir) => {
+    switch (dir) {
+      case 'up': return { dx: 0, dy: STEP }
+      case 'down': return { dx: 0, dy: -STEP }
+      case 'left': return { dx: STEP, dy: 0 }
+      case 'right': return { dx: -STEP, dy: 0 }
+      default: return { dx: 0, dy: 0 }
+    }
+  }
+
+  const stop = () => {
+    if (timer) clearTimeout(timer)
+    if (repeater) clearInterval(repeater)
+    timer = null
+    repeater = null
+    root.querySelectorAll('.dpad__btn.is-pressed')
+      .forEach(b => b.classList.remove('is-pressed'))
+  }
+
+  const startRepeat = (btn, dir) => {
+    stop()
+    btn.classList.add('is-pressed')
+
+    if (dir === 'center') {
+      fitPlannerToWalls()
+      rerender()
+      setTimeout(stop, 0)
+      return
+    }
+
+    const { dx, dy } = dirToDelta(dir)
+    panBy(dx, dy)
+
+    timer = setTimeout(() => {
+      repeater = setInterval(() => panBy(dx, dy), REPEAT_MS)
+    }, FIRST_DELAY)
+  }
+
+  root.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('.dpad__btn')
+    if (!btn) return
+    e.preventDefault()
+    btn.setPointerCapture?.(e.pointerId)
+    startRepeat(btn, btn.dataset.pan)
+  }, { passive: false })
+
+  root.addEventListener('pointerup', stop)
+  root.addEventListener('pointercancel', stop)
+  root.addEventListener('pointerleave', stop)
+
+  window.addEventListener('blur', stop)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stop()
+  })
+}
+
 
 // ---------------- render throttle ----------------
 let raf = 0
 function scheduleRerender() {
-    if (raf) return
-    raf = requestAnimationFrame(() => {
-        raf = 0
-        rerender()
-    })
+  if (raf) return
+  raf = requestAnimationFrame(() => {
+    raf = 0
+    rerender()
+  })
 }
 
+function rerender() {
+  render(draw)
+  updateStatus()
+  updateDeleteButtonState()
+  updateDoorButtonState()
+}
+
+// ---------------- helpers: find ids from SVG target ----------------
+function findWallIdFromEventTarget(target) {
+  let el = target
+  while (el && el !== draw.node) {
+    if (el.getAttribute) {
+      const id = el.getAttribute('data-wall-id')
+      if (id) return id
+    }
+    el = el.parentNode
+  }
+  return null
+}
+
+function findDoorIdFromEventTarget(target) {
+  let el = target
+  while (el && el !== draw.node) {
+    if (el.getAttribute) {
+      const id = el.getAttribute('data-door-id')
+      if (id) return id
+    }
+    el = el.parentNode
+  }
+  return null
+}
+
+// ---------------- fit helpers (padding via CSS vars) ----------------
 function getFitPaddingPx() {
   const rect = draw.node.getBoundingClientRect()
   const css = getComputedStyle(document.documentElement)
 
   const padInlinePct = parseFloat(css.getPropertyValue('--planner-pad-inline')) || 10
-  const padBlockPct  = parseFloat(css.getPropertyValue('--planner-pad-block')) || 10
+  const padBlockPct = parseFloat(css.getPropertyValue('--planner-pad-block')) || 10
 
   const padMin = parseFloat(css.getPropertyValue('--planner-pad-min')) || 24
   const padMax = parseFloat(css.getPropertyValue('--planner-pad-max')) || 320
 
   const mult = parseFloat(css.getPropertyValue('--planner-fit-mult')) || 1
 
-  const pxX = (rect.width  * padInlinePct) / 100
+  const pxX = (rect.width * padInlinePct) / 100
   const pxY = (rect.height * padBlockPct) / 100
 
   let padding = Math.min(pxX, pxY) * mult
   padding = Math.max(padMin, Math.min(padMax, padding))
-
   return padding
 }
 
@@ -95,605 +195,739 @@ function fitPlannerToWalls() {
   fitToWalls(draw, { padding: getFitPaddingPx(), maxScale: getPlannerMaxScale() })
 }
 
-
 // ---------------- status / delete btn ----------------
 function updateDeleteButtonState() {
-    if (!btnTrash) return
+  if (!btnTrash) return
 
-    const sel = state.selectedWallId
+  // Во время рисования стен/дверей — удаление отключаем
+  if (state.mode === 'draw-wall' || state.mode === 'draw-door') {
+    btnTrash.classList.add('is-disabled')
+    btnTrash.classList.remove('is-danger')
+    return
+  }
 
-    // во время рисования стен — удаление отключаем
-    if (state.mode === 'draw-wall' || !sel) {
-        btnTrash.classList.add('is-disabled')
-        btnTrash.classList.remove('is-danger')
-        return
-    }
+  // 1) Если выбрана дверь — можно удалить только interior
+  if (state.selectedDoorId) {
+    const d = (state.doors || []).find(x => x.id === state.selectedDoorId)
+    const ok = !!d && d.kind === 'interior' && !d.locked
+    btnTrash.classList.toggle('is-disabled', !ok)
+    btnTrash.classList.toggle('is-danger', ok)
+    return
+  }
 
-    const w = state.walls.find(w => w.id === sel)
+  // 2) Если выбрана стена — можно удалить только normal
+  const wallId = state.selectedWallId
+  if (!wallId) {
+    btnTrash.classList.add('is-disabled')
+    btnTrash.classList.remove('is-danger')
+    return
+  }
 
-    // нельзя удалять capital или если стену не нашли
-    if (!w || w.kind === 'capital') {
-        btnTrash.classList.add('is-disabled')
-        btnTrash.classList.remove('is-danger')
-        return
-    }
-
-    // можно удалять normal
-    btnTrash.classList.remove('is-disabled')
-    btnTrash.classList.add('is-danger')
+  const w = (state.walls || []).find(w => w.id === wallId)
+  const ok = !!w && w.kind === 'normal'
+  btnTrash.classList.toggle('is-disabled', !ok)
+  btnTrash.classList.toggle('is-danger', ok)
 }
+
+
+function updateDoorButtonState() {
+  if (!btnDoor) return
+  // в режиме draw-wall запрещаем, в остальном — всегда можно включить режим двери
+  const ok = state.mode !== 'draw-wall'
+  btnDoor.classList.toggle('is-disabled', !ok)
+}
+
 
 function updateStatus() {
-    if (!status) return
+  if (!status) return
 
-    const area = capitalAreaM2()
-    const sum = totalNormalLengthM()
-    const sel = getSelectedWall()
+  const area = capitalAreaM2()
+  const sum = totalNormalLengthM()
+  const sel = getSelectedWall()
 
-    if (state.mode === 'draw-wall') {
-        status.textContent = `Режим: Wall | Сумма стен: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
-        return
-    }
+  if (state.mode === 'draw-wall') {
+    status.textContent = `Режим: Wall | Сумма стен: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+    return
+  }
 
-    if (sel) {
-        const len = wallLengthM(sel)
-        status.textContent = `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
-    } else {
-        status.textContent = `Select | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
-    }
+  if (state.selectedDoorId) {
+    status.textContent = `Select | Door: ${state.selectedDoorId} | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+    return
+  }
+
+  if (sel) {
+    const len = wallLengthM(sel)
+    status.textContent = `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+  } else {
+    status.textContent = `Select | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+  }
 }
 
-function rerender() {
-    render(draw)
-    updateStatus()
-    updateDeleteButtonState()
-}
-
-// ---------------- pan / dpad ----------------
-function panBy(dx, dy) {
-    state.view.offsetX += dx
-    state.view.offsetY += dy
-    rerender()
-}
-
-function initDPad() {
-    const root = document.getElementById('dpad')
-    if (!root) return
-
-    const STEP = 40 // px за тик
-    const FIRST_DELAY = 140
-    const REPEAT_MS = 30
-
-    let timer = null
-    let repeater = null
-
-    const dirToDelta = (dir) => {
-        switch (dir) {
-            case 'up': return { dx: 0, dy: STEP }
-            case 'down': return { dx: 0, dy: -STEP }
-            case 'left': return { dx: STEP, dy: 0 }
-            case 'right': return { dx: -STEP, dy: 0 }
-            default: return { dx: 0, dy: 0 }
-        }
-    }
-
-    const stop = () => {
-        if (timer) clearTimeout(timer)
-        if (repeater) clearInterval(repeater)
-        timer = null
-        repeater = null
-        root.querySelectorAll('.dpad__btn.is-pressed').forEach(b => b.classList.remove('is-pressed'))
-    }
-
-    const startRepeat = (btn, dir) => {
-        stop()
-        btn.classList.add('is-pressed')
-
-        if (dir === 'center') {
-            fitPlannerToWalls()
-
-            rerender()
-            setTimeout(stop, 0)
-            return
-        }
-
-        const { dx, dy } = dirToDelta(dir)
-        panBy(dx, dy)
-
-        timer = setTimeout(() => {
-            repeater = setInterval(() => panBy(dx, dy), REPEAT_MS)
-        }, FIRST_DELAY)
-    }
-
-    root.addEventListener('pointerdown', (e) => {
-        const btn = e.target.closest('.dpad__btn')
-        if (!btn) return
-        e.preventDefault?.()
-        btn.setPointerCapture?.(e.pointerId)
-        startRepeat(btn, btn.dataset.pan)
-    }, { passive: false })
-
-    root.addEventListener('pointerup', stop)
-    root.addEventListener('pointercancel', stop)
-    root.addEventListener('pointerleave', stop)
-
-    window.addEventListener('blur', stop)
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) stop()
-    })
-}
-
-// ---------------- cursor center (desktop only) ----------------
-function placeCursorAtViewportCenter() {
-    const rect = draw.node.getBoundingClientRect()
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
-    const raw = screenToWorld(draw, cx, cy)
-
-    state.snapPoint = smartSnapPoint(raw, null, {
-        grid: GRID_STEP_SNAP,
-        snapPx: 22,
-        axisPx: 14,
-        toGrid: true,
-        toPoints: true,
-        toAxis: true,
-        toCapital: true,
-        toNormals: true,
-        tGuard: 0.08,
-    })
-
-    state.cursorState = 'idle'
-}
-
-// -------- mode helpers --------
+// ---------------- mode helpers ----------------
 function setMode(mode) {
-    state.mode = mode
-    state.previewWall = null
-    state.draft = null
-    state.edit = null
+  state.mode = mode
+  state.previewWall = null
+  state.draft = null
+  state.edit = null
 
-    state.ui = state.ui || {}
-    state.ui.lockPan = false
+  state.ui = state.ui || {}
+  state.ui.lockPan = false
 
-    if (mode === 'draw-wall') {
-        state.selectedWallId = null
-        state.hoverWallId = null
+  if (mode === 'draw-wall') {
+    state.selectedWallId = null
+    state.selectedDoorId = null
+    state.hoverWallId = null
+    state.snapPoint = null
+    state.cursorState = 'idle'
+  } else {
+    state.cursorState = 'idle'
+    state.snapPoint = null
+  }
 
-        // ✅ и на мобиле, и на десктопе — НЕ ставим точку в центр
-        state.snapPoint = null
-        state.cursorState = 'idle'
-    }
-    else {
-        state.cursorState = 'idle'
-        state.snapPoint = null
-    }
+  if (mode === 'draw-door') {
+    state.selectedWallId = null
+    state.selectedDoorId = null
+    state.hoverWallId = null
+    state.previewDoor = null
+  }
+  if (mode !== 'draw-door') {
+    state.previewDoor = null
+  }
 
-    syncUI()
-    rerender()
+
+  syncUI()
+  rerender()
 }
 
 function syncUI() {
-    const isWall = state.mode === 'draw-wall'
-    btnWall?.classList.toggle('is-active', isWall)
+  const isWall = state.mode === 'draw-wall'
+  const isDoor = state.mode === 'draw-door'
+  btnWall?.classList.toggle('is-active', isWall)
+  btnDoor?.classList.toggle('is-active', isDoor)
 
-    if (hint) {
-        hint.textContent = isWall
-            ? 'Wall: на мобиле — только drag. На десктопе — клик A, клик B. ESC — отмена.'
-            : 'Клик по стене — выделить. Drag по стене/хэндлам — редактировать. Drag по пустому — панорамирование.'
-    }
+  if (hint) {
+    hint.textContent = isWall
+      ? 'Wall: на мобиле — только drag. На десктопе — клик A, клик B. ESC — отмена.'
+      : 'Клик по стене — выделить. Drag по стене/хэндлам — редактировать. Drag по пустому — панорамирование.'
+  }
 }
 
 btnWall?.addEventListener('click', () =>
-    setMode(state.mode === 'draw-wall' ? 'idle' : 'draw-wall')
+  setMode(state.mode === 'draw-wall' ? 'idle' : 'draw-wall')
 )
 
-// -------- delete selected --------
-function deleteSelectedWall() {
-    const id = state.selectedWallId
-    if (!id) return
+btnDoor?.addEventListener('click', (e) => {
+  e.preventDefault()
+  setMode(state.mode === 'draw-door' ? 'idle' : 'draw-door')
+})
 
-    const idx = state.walls.findIndex(w => w.id === id)
+
+// ---------------- delete selected wall ----------------
+function deleteSelectedElement() {
+  // 0) Не удаляем во время рисования
+  if (state.mode === 'draw-wall' || state.mode === 'draw-door') return
+
+  // 1) Если выбрана дверь — удаляем её (только interior)
+  if (state.selectedDoorId) {
+    const id = state.selectedDoorId
+    const d = (state.doors || []).find(x => x.id === id)
+    if (!d || d.kind !== 'interior' || d.locked) return // entry не трогаем
+
+    const idx = (state.doors || []).findIndex(x => x.id === id)
     if (idx === -1) return
-    if (state.walls[idx].kind === 'capital') return
 
-    historyCommit('delete')    // ✅
-    state.walls.splice(idx, 1)
-
-    state.selectedWallId = null
+    historyCommit('delete-door')
+    state.doors.splice(idx, 1)
+    state.selectedDoorId = null
     scheduleRerender()
+    return
+  }
+
+  // 2) Иначе — удаляем стену (только normal)
+  const wallId = state.selectedWallId
+  if (!wallId) return
+
+  const wIdx = (state.walls || []).findIndex(w => w.id === wallId)
+  if (wIdx === -1) return
+  if (state.walls[wIdx].kind !== 'normal') return
+
+  historyCommit('delete-wall')
+  state.walls.splice(wIdx, 1)
+
+  // двери на этой стене — удалить тоже (и entry, и interior)
+  state.doors = (state.doors || []).filter(d => d.wallId !== wallId)
+
+  state.selectedWallId = null
+  scheduleRerender()
 }
 
 
-window.addEventListener('keydown', (e) => {
-    if (e.key !== 'Delete' && e.key !== 'Backspace') return
-    const tag = document.activeElement?.tagName?.toLowerCase()
-    if (tag === 'input' || tag === 'textarea') return
-    deleteSelectedWall()
-})
+btnTrash?.addEventListener('click', deleteSelectedElement
+)
 
 window.addEventListener('keydown', (e) => {
-    const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
-    const mod = isMac ? e.metaKey : e.ctrlKey
-
-    if (!mod) return
-
-    // Ctrl/Cmd+Z
-    if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
-        e.preventDefault()
-        if (undo()) rerender()
-        return
-    }
-
-    // Ctrl/Cmd+Shift+Z  (и для винды часто Ctrl+Y)
-    if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
-        e.preventDefault()
-        if (redo()) rerender()
-        return
-    }
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return
+  const tag = document.activeElement?.tagName?.toLowerCase()
+  if (tag === 'input' || tag === 'textarea') return
+  deleteSelectedElement
+    ()
 })
 
+// ---------------- undo/redo hotkeys ----------------
+window.addEventListener('keydown', (e) => {
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+  const mod = isMac ? e.metaKey : e.ctrlKey
+  if (!mod) return
 
-btnTrash?.addEventListener('click', deleteSelectedWall)
+  if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (undo()) rerender()
+    return
+  }
+
+  if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+    e.preventDefault()
+    if (redo()) rerender()
+    return
+  }
+})
 
 // -------- zoom UI --------
 document.getElementById('zoom-in')?.addEventListener('click', () => {
-    setZoomAtCenter(draw, Math.min(5, state.view.scale * 1.2))
-    scheduleRerender()
+  setZoomAtCenter(draw, Math.min(5, state.view.scale * 1.2))
+  scheduleRerender()
 })
 document.getElementById('zoom-out')?.addEventListener('click', () => {
-    setZoomAtCenter(draw, Math.max(0.2, state.view.scale / 1.2))
-    scheduleRerender()
+  setZoomAtCenter(draw, Math.max(0.2, state.view.scale / 1.2))
+  scheduleRerender()
 })
 document.getElementById('zoom-reset')?.addEventListener('click', () => {
-    fitPlannerToWalls()
-    scheduleRerender()
+  fitPlannerToWalls()
+  scheduleRerender()
 })
 
 // -------- init interactions --------
 initViewport(draw)
 initPointer(draw, { newWallId })
-initDPad()
+initDPad() // ✅ ВОТ ЭТОГО НЕ ХВАТАЛО
 window.addEventListener('planner:changed', scheduleRerender)
 
 // -------- undo/redo buttons --------
 const btnUndo = document.getElementById('undo')
 const btnRedo = document.getElementById('redo')
 
-function applyUndo() {
-    // на всякий: выходим из drag/edit
-    state.edit = null
-    state.previewWall = null
-    state.ui = state.ui || {}
-    state.ui.lockPan = false
-    state.selectedWallId = null
+function resetInteractionState() {
+  // выйти из wall drag / door drag / preview
+  state.edit = null
+  state.previewWall = null
+  state.ui = state.ui || {}
+  state.ui.lockPan = false
 
-    if (undo()) rerender()
+  // важное: дверь тоже может быть в drag
+  if (typeof stopDoorDrag === 'function') stopDoorDrag()
+}
+
+function applyUndo() {
+  resetInteractionState()
+  state.selectedWallId = null
+  state.selectedDoorId = null
+  if (undo()) rerender()
 }
 
 function applyRedo() {
-    state.edit = null
-    state.previewWall = null
-    state.ui = state.ui || {}
-    state.ui.lockPan = false
-    state.selectedWallId = null
-
-    if (redo()) rerender()
+  resetInteractionState()
+  state.selectedWallId = null
+  state.selectedDoorId = null
+  if (redo()) rerender()
 }
 
 btnUndo?.addEventListener('click', (e) => {
-    e.preventDefault()
-    applyUndo()
+  e.preventDefault()
+  applyUndo()
 })
 
 btnRedo?.addEventListener('click', (e) => {
-    e.preventDefault()
-    applyRedo()
+  e.preventDefault()
+  applyRedo()
 })
 
 
-// -------- hover highlight (mouse only, throttled, disabled while edit/pan) --------
-
-function findWallIdFromEventTarget(target) {
-    let el = target
-    while (el && el !== draw.node) {
-        if (el.getAttribute) {
-            const id = el.getAttribute('data-wall-id')
-            if (id) return id
-        }
-        el = el.parentNode
-    }
-    return null
+// ---------------- DOORS: add + select + drag ----------------
+function getDoorById(id) {
+  return (state.doors || []).find(d => d.id === id) || null
 }
 
-draw.node.addEventListener('pointermove', (e) => {
-    if (isTouchLike) return
+function clampDoorTToWall(door, wall) {
+  const a = wall.a, b = wall.b
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+  const half = (door.w ?? 75) / 2
+  const marginT = Math.min(0.49, half / len)
+  door.t = Math.max(marginT, Math.min(1 - marginT, door.t ?? 0.5))
+}
 
-    // hover выключаем в draw
-    if (state.mode === 'draw-wall') {
-        if (state.hoverWallId) {
-            state.hoverWallId = null
-            scheduleRerender()
-        }
-        return
-    }
+function projectPointToWallT(p, a, b) {
+  const abx = b.x - a.x
+  const aby = b.y - a.y
+  const apx = p.x - a.x
+  const apy = p.y - a.y
+  const ab2 = abx * abx + aby * aby
+  if (ab2 < 1e-9) return 0.5
+  return (apx * abx + apy * aby) / ab2
+}
 
-    // ✅ когда редактируем стену/хэндл или панорамируем — hover отключаем
-    if (state.edit || state.ui?.lockPan || state.ui?.dragged) {
-        if (state.hoverWallId) {
-            state.hoverWallId = null
-            scheduleRerender()
-        }
-        return
-    }
+function clampDoorTToWallParams(t, doorW, wall) {
+  const a = wall.a, b = wall.b
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+  const half = doorW / 2
+  const marginT = Math.min(0.49, half / len)
+  return Math.max(marginT, Math.min(1 - marginT, t))
+}
 
-    const id = findWallIdFromEventTarget(e.target)
-    if (id !== state.hoverWallId) {
-        state.hoverWallId = id
-        scheduleRerender()
-    }
+let doorEdit = null
+
+function startDoorDrag(doorId, mouseWorld) {
+  const d = getDoorById(doorId)
+  if (!d || d.kind !== 'interior' || d.locked) return
+
+  const w = (state.walls || []).find(x => x.id === d.wallId)
+  if (!w) return
+
+  historyBegin('move-door')
+
+  state.ui = state.ui || {}
+  state.ui.lockPan = true
+  state.hoverWallId = null
+
+  doorEdit = { id: doorId }
+}
+
+function applyDoorDrag(mouseWorld) {
+  if (!doorEdit) return
+  const d = getDoorById(doorEdit.id)
+  if (!d) return
+
+  const w = (state.walls || []).find(x => x.id === d.wallId)
+  if (!w) return
+
+  d.t = projectPointToWallT(mouseWorld, w.a, w.b)
+  clampDoorTToWall(d, w)
+}
+
+function stopDoorDrag() {
+  if (!doorEdit) return
+  doorEdit = null
+
+  state.ui = state.ui || {}
+  state.ui.lockPan = false
+
+  historyEnd()
+}
+
+function nudgeSelectedDoorByArrow(key) {
+  const id = state.selectedDoorId
+  if (!id) return
+
+  const d = getDoorById(id)
+  if (!d || d.kind !== 'interior' || d.locked) return
+
+  const w = (state.walls || []).find(x => x.id === d.wallId)
+  if (!w) return
+
+  const dx = w.b.x - w.a.x
+  const dy = w.b.y - w.a.y
+  const horizontal = Math.abs(dx) >= Math.abs(dy)
+
+  const STEP_WORLD = 25 // 25 см
+  const len = Math.hypot(dx, dy) || 1
+  const dt = STEP_WORLD / len
+
+  let dir = 0
+  if (horizontal) {
+    if (key === 'ArrowLeft') dir = -1
+    if (key === 'ArrowRight') dir = +1
+  } else {
+    if (key === 'ArrowUp') dir = -1
+    if (key === 'ArrowDown') dir = +1
+  }
+  if (!dir) return
+
+  historyCommit('move-door')
+  d.t = (d.t ?? 0.5) + dir * dt
+  clampDoorTToWall(d, w)
+  scheduleRerender()
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+  const tag = document.activeElement?.tagName?.toLowerCase()
+  if (tag === 'input' || tag === 'textarea') return
+  nudgeSelectedDoorByArrow(e.key)
 })
+
+// ---------------- hover highlight (mouse only) ----------------
+// ---------------- hover highlight (mouse only) ----------------
+draw.node.addEventListener('pointermove', (e) => {
+
+  // ✅ Door placement preview
+  if (state.mode === 'draw-door') {
+    const p = screenToWorld(draw, e.clientX, e.clientY)
+
+    const wallId = pickNormalWallAt(p, { tolPx: 18 })
+
+    // 1) если не попали в normal-стену — убрать preview (и ререндер только если было что убирать)
+    if (!wallId) {
+      if (state.previewDoor) {
+        state.previewDoor = null
+        scheduleRerender()
+      }
+      return
+    }
+
+    const w = (state.walls || []).find(x => x.id === wallId)
+    if (!w || w.kind !== 'normal') {
+      if (state.previewDoor) {
+        state.previewDoor = null
+        scheduleRerender()
+      }
+      return
+    }
+
+    // 2) вычисляем t и новый preview
+    let t = projectPointToWallT(p, w.a, w.b)
+    t = clampDoorTToWallParams(t, 75, w)
+
+    const next = { wallId, t, w: 75, thick: NOR_W }
+    const prev = state.previewDoor
+    const changed =
+      !prev ||
+      prev.wallId !== next.wallId ||
+      Math.abs((prev.t ?? 0) - next.t) > 1e-4
+
+    // 3) обновляем только если реально изменилось
+    if (changed) {
+      state.previewDoor = next
+      scheduleRerender()
+    }
+    return
+  }
+
+  // дальше — обычный hover стен
+  if (isTouchLike) return
+
+  if (state.mode === 'draw-wall') {
+    if (state.hoverWallId) {
+      state.hoverWallId = null
+      scheduleRerender()
+    }
+    return
+  }
+
+  // когда редактируем стену/дверь или панорамируем — hover отключаем
+  if (state.edit || doorEdit || state.ui?.lockPan || state.ui?.dragged) {
+    if (state.hoverWallId) {
+      state.hoverWallId = null
+      scheduleRerender()
+    }
+    return
+  }
+
+  const id = findWallIdFromEventTarget(e.target)
+  if (id !== state.hoverWallId) {
+    state.hoverWallId = id
+    scheduleRerender()
+  }
+})
+
 
 draw.node.addEventListener('pointerleave', () => {
-    if (state.hoverWallId) {
-        state.hoverWallId = null
-        scheduleRerender()
-    }
+  if (state.hoverWallId) {
+    state.hoverWallId = null
+    scheduleRerender()
+  }
 })
 
-// ---------------- SELECT: move + resize ----------------
+// ---------------- SELECT: move + resize walls ----------------
 function getWallById(id) {
-    return (state.walls || []).find(w => w.id === id) || null
+  return (state.walls || []).find(w => w.id === id) || null
 }
 
 function startEdit(kind, wallId, mouseWorld) {
-    const w = getWallById(wallId)
-    if (!w || w.kind === 'capital') return
+  const w = getWallById(wallId)
+  if (!w || w.kind === 'capital') return
 
-    historyBegin(kind) // ✅ один undo на весь drag
+  historyBegin(kind)
 
-    state.ui = state.ui || {}
-    state.ui.lockPan = true
-    state.hoverWallId = null
+  state.ui = state.ui || {}
+  state.ui.lockPan = true
+  state.hoverWallId = null
 
-    state.edit = {
-        id: wallId,
-        kind, // 'move' | 'a' | 'b'
-        startMouse: { ...mouseWorld },
+  state.edit = {
+    id: wallId,
+    kind, // 'move' | 'a' | 'b'
+    startMouse: { ...mouseWorld },
 
-        // видимые
-        startA: { ...w.a },
-        startB: { ...w.b },
-
-        // строительные
-        startVA: { ...(w.va || w.a) },
-        startVB: { ...(w.vb || w.b) },
-    }
+    // строительные
+    startVA: { ...(w.va || w.a) },
+    startVB: { ...(w.vb || w.b) },
+  }
 }
 
 function stopEdit() {
-    state.edit = null
-    state.ui = state.ui || {}
-    state.ui.lockPan = false
-
-    historyEnd() // ✅ фиксируем транзакцию
+  state.edit = null
+  state.ui = state.ui || {}
+  state.ui.lockPan = false
+  historyEnd()
 }
 
-
-/* ------------------ SNAP + TRIM TO CAPITALS (for edit) ------------------ */
-
+/* ------------------ helpers for edit ------------------ */
 const clamp2 = (v, a, b) => Math.max(a, Math.min(b, v))
 
 function projectPointToSegmentClamped(p, a, b) {
-    const abx = b.x - a.x, aby = b.y - a.y
-    const apx = p.x - a.x, apy = p.y - a.y
-    const ab2 = abx * abx + aby * aby
+  const abx = b.x - a.x, aby = b.y - a.y
+  const apx = p.x - a.x, apy = p.y - a.y
+  const ab2 = abx * abx + aby * aby
 
-    if (ab2 < 1e-9) {
-        const d = Math.hypot(p.x - a.x, p.y - a.y)
-        return { point: { ...a }, d }
-    }
+  if (ab2 < 1e-9) {
+    const d = Math.hypot(p.x - a.x, p.y - a.y)
+    return { point: { ...a }, d }
+  }
 
-    let t = (apx * abx + apy * aby) / ab2
-    t = clamp2(t, 0, 1)
-    const q = { x: a.x + abx * t, y: a.y + aby * t }
-    const d = Math.hypot(p.x - q.x, p.y - q.y)
-    return { point: q, d }
+  let t = (apx * abx + apy * aby) / ab2
+  t = clamp2(t, 0, 1)
+  const q = { x: a.x + abx * t, y: a.y + aby * t }
+  const d = Math.hypot(p.x - q.x, p.y - q.y)
+  return { point: q, d }
 }
 
 function trimPointBack(from, to, trimLen) {
-    const dx = to.x - from.x
-    const dy = to.y - from.y
-    const len = Math.hypot(dx, dy) || 1
-    const ux = dx / len
-    const uy = dy / len
-    return { x: to.x - ux * trimLen, y: to.y - uy * trimLen }
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len
+  const uy = dy / len
+  return { x: to.x - ux * trimLen, y: to.y - uy * trimLen }
 }
 
 function nearestPointOnCapitals(p) {
-    const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
-    if (!caps.length) return null
+  const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+  if (!caps.length) return null
 
-    let best = null
-    for (const c of caps) {
-        const pr = projectPointToSegmentClamped(p, c.a, c.b)
-        if (!best || pr.d < best.d) best = pr
-    }
-    return best
+  let best = null
+  for (const c of caps) {
+    const pr = projectPointToSegmentClamped(p, c.a, c.b)
+    if (!best || pr.d < best.d) best = pr
+  }
+  return best
 }
 
 function snapTrimEndToCapital(end, otherEnd, snapPx = 22) {
-    const scale = Math.max(1e-6, state.view.scale)
-    const tolWorld = snapPx / scale
+  const scale = Math.max(1e-6, state.view.scale)
+  const tolWorld = snapPx / scale
 
-    const hit = nearestPointOnCapitals(end)
-    if (!hit || hit.d > tolWorld) return null
+  const hit = nearestPointOnCapitals(end)
+  if (!hit || hit.d > tolWorld) return null
 
-    const trimLen = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
-    return trimPointBack(otherEnd, hit.point, trimLen)
-}
-
-function snapWholeSegmentToCapital(a, b, snapPx = 22) {
-    const aTrim = snapTrimEndToCapital(a, b, snapPx)
-    const bTrim = snapTrimEndToCapital(b, a, snapPx)
-    if (!aTrim && !bTrim) return { a, b }
-
-    const da = aTrim ? Math.hypot(aTrim.x - a.x, aTrim.y - a.y) : Infinity
-    const db = bTrim ? Math.hypot(bTrim.x - b.x, bTrim.y - b.y) : Infinity
-
-    const useA = da <= db
-    const target = useA ? aTrim : bTrim
-    const src = useA ? a : b
-
-    const dx = target.x - src.x
-    const dy = target.y - src.y
-
-    return {
-        a: { x: a.x + dx, y: a.y + dy },
-        b: { x: b.x + dx, y: b.y + dy },
-    }
+  const trimLen = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
+  return trimPointBack(otherEnd, hit.point, trimLen)
 }
 
 function applyEdit(mouseWorld) {
-    const ed = state.edit
-    if (!ed) return
-    const w = getWallById(ed.id)
-    if (!w) return
+  const ed = state.edit
+  if (!ed) return
+  const w = getWallById(ed.id)
+  if (!w) return
 
-    const dx = mouseWorld.x - ed.startMouse.x
-    const dy = mouseWorld.y - ed.startMouse.y
+  const dx = mouseWorld.x - ed.startMouse.x
+  const dy = mouseWorld.y - ed.startMouse.y
 
-    let newVA = { ...ed.startVA }
-    let newVB = { ...ed.startVB }
+  let newVA = { ...ed.startVA }
+  let newVB = { ...ed.startVB }
 
-    const snapOpts = {
-        grid: GRID_STEP_SNAP,
-        snapPx: 14,
-        axisPx: 10,
-        toGrid: true,
-        toPoints: true,
-        toAxis: true,
-        toCapital: true,
-        toNormals: true,
-    }
+  const snapOpts = {
+    grid: GRID_STEP_SNAP,
+    snapPx: 14,
+    axisPx: 10,
+    toGrid: true,
+    toPoints: true,
+    toAxis: true,
+    toCapital: true,
+    toNormals: true,
+  }
 
-    if (ed.kind === 'move') {
-        let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+  if (ed.kind === 'move') {
+    let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
 
-        movedA = smartSnapPoint(movedA, null, {
-            ...snapOpts,
-            toAxis: false,
-            toCapital: false,
-            toNormals: false,
-        })
+    movedA = smartSnapPoint(movedA, null, {
+      ...snapOpts,
+      toAxis: false,
+      toCapital: false,
+      toNormals: false,
+    })
 
-        const offX = ed.startVB.x - ed.startVA.x
-        const offY = ed.startVB.y - ed.startVA.y
+    const offX = ed.startVB.x - ed.startVA.x
+    const offY = ed.startVB.y - ed.startVA.y
 
-        newVA = movedA
-        newVB = { x: movedA.x + offX, y: movedA.y + offY }
-    }
+    newVA = movedA
+    newVB = { x: movedA.x + offX, y: movedA.y + offY }
+  }
 
-    if (ed.kind === 'a') {
-        newVA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
-        newVA = smartSnapPoint(newVA, newVB, snapOpts)
-    }
+  if (ed.kind === 'a') {
+    newVA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+    newVA = smartSnapPoint(newVA, newVB, snapOpts)
+  }
 
-    if (ed.kind === 'b') {
-        newVB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
-        newVB = smartSnapPoint(newVB, newVA, snapOpts)
-    }
+  if (ed.kind === 'b') {
+    newVB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
+    newVB = smartSnapPoint(newVB, newVA, snapOpts)
+  }
 
-    // ✅ сначала базовая проверка по строительной геометрии (пересечения и т.п.)
-    if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
+  if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
 
-    // ✅ сохраняем текущее состояние стены для отката
-    const old = {
-        a: { ...w.a },
-        b: { ...w.b },
-        va: { ...(w.va || w.a) },
-        vb: { ...(w.vb || w.b) },
-    }
+  const old = {
+    a: { ...w.a },
+    b: { ...w.b },
+    va: { ...(w.va || w.a) },
+    vb: { ...(w.vb || w.b) },
+  }
 
-    // ✅ применяем строительную геометрию
-    w.va = newVA
-    w.vb = newVB
+  w.va = newVA
+  w.vb = newVB
 
-    // ✅ нормализуем (тут появляется визуальный trim a/b)
-    normalizeNormalWall(w, { snapPx: 22, doTrim: true })
+  normalizeNormalWall(w, { snapPx: 22, doTrim: true })
 
-    // ✅ clear проверяем ПОСЛЕ normalize по ВИДИМОЙ геометрии
-    const clearOpts =
-        (ed.kind === 'move')
-            ? { endGuard: 0, samples: 32 }      // при переносе проверяем даже концы
-            : { endGuard: 0.06, samples: 32 }   // при ресайзе оставляем “пристыковку”
+  const clearOpts =
+    (ed.kind === 'move')
+      ? { endGuard: 0, samples: 32 }
+      : { endGuard: 0.06, samples: 32 }
 
-    if (!isSegmentClearOfCapitals(w.a, w.b, CLEAR_FROM_CAPITAL, clearOpts)) {
-        // ❌ нельзя — откатываем
-        w.a = old.a
-        w.b = old.b
-        w.va = old.va
-        w.vb = old.vb
-        return
-    }
+  if (!isSegmentClearOfCapitals(w.a, w.b, CLEAR_FROM_CAPITAL, clearOpts)) {
+    w.a = old.a
+    w.b = old.b
+    w.va = old.va
+    w.vb = old.vb
+    return
+  }
 
-    // ✅ всё ок — фиксируем: va/vb должны соответствовать newVA/newVB
-    w.va = newVA
-    w.vb = newVB
+  w.va = newVA
+  w.vb = newVB
 }
 
-
-// pointerdown: выбираем, что делаем
+// ---------------- POINTER: select door / wall / empty ----------------
 draw.node.addEventListener('pointerdown', (e) => {
-    if (state.mode === 'draw-wall') return
-    if (e.button !== 0 && e.pointerType === 'mouse') return
+  if (state.mode === 'draw-door') {
+    const pd = state.previewDoor
+    if (pd && pd.wallId) {
+      historyCommit('add-door')
+      state.doors = state.doors || []
+      state.doors.push({
+        id: newDoorId(),
+        kind: 'interior',
+        wallId: pd.wallId,
+        t: pd.t,
+        w: 75,
+        thick: NOR_W,
+      })
 
-    // если уже идёт пан — не стартуем edit
-    if (state.ui?.dragged) return
+      // ✅ НЕ выбираем дверь автоматически
+      state.selectedDoorId = null
+      state.selectedWallId = null
 
-    const p = screenToWorld(draw, e.clientX, e.clientY)
-
-    const h = typeof pickWallHandleAt === 'function'
-        ? pickWallHandleAt(p, { tolPx: 14 })
-        : null
-
-    if (h) {
-        state.selectedWallId = h.id
-        startEdit(h.handle, h.id, p)
-        scheduleRerender()
-        return
+      state.previewDoor = null
+      scheduleRerender()
     }
+    return
+  }
 
-    const id = pickNormalWallAt(p, { tolPx: 16 })
-    if (id) {
-        state.selectedWallId = id
-        startEdit('move', id, p)
-        scheduleRerender()
-        return
+
+  if (state.mode === 'draw-wall') return
+  if (e.button !== 0 && e.pointerType === 'mouse') return
+  if (state.ui?.dragged) return
+
+  const p = screenToWorld(draw, e.clientX, e.clientY)
+
+  // ✅ 0) door hit first (interior only)
+  const doorId = findDoorIdFromEventTarget(e.target)
+  if (doorId) {
+    const d = getDoorById(doorId)
+    if (d && d.kind === 'interior' && !d.locked) {
+      state.selectedDoorId = doorId
+      state.selectedWallId = null
+      startDoorDrag(doorId, p)
+      scheduleRerender()
+      return
     }
+  }
 
-    state.selectedWallId = null
+  // ✅ 1) wall handle
+  const h = typeof pickWallHandleAt === 'function'
+    ? pickWallHandleAt(p, { tolPx: 14 })
+    : null
+
+  if (h) {
+    state.selectedWallId = h.id
+    state.selectedDoorId = null
+    startEdit(h.handle, h.id, p)
     scheduleRerender()
+    return
+  }
+
+  // ✅ 2) wall body
+  const id = pickNormalWallAt(p, { tolPx: 16 })
+  if (id) {
+    state.selectedWallId = id
+    state.selectedDoorId = null
+    startEdit('move', id, p)
+    scheduleRerender()
+    return
+  }
+
+  // ✅ 3) empty
+  state.selectedWallId = null
+  state.selectedDoorId = null
+  scheduleRerender()
 })
 
 draw.node.addEventListener('pointermove', (e) => {
-    if (state.mode === 'draw-wall') return
-    if (!state.edit) return
-    const p = screenToWorld(draw, e.clientX, e.clientY)
-    applyEdit(p)
+  if (state.mode === 'draw-door' || state.mode === 'draw-wall') return
+
+  const p = screenToWorld(draw, e.clientX, e.clientY)
+
+  // ✅ door drag priority
+  if (doorEdit) {
+    applyDoorDrag(p)
     scheduleRerender()
+    return
+  }
+
+  // ✅ wall edit
+  if (!state.edit) return
+  applyEdit(p)
+  scheduleRerender()
 })
 
 draw.node.addEventListener('pointerup', () => {
-    if (state.mode === 'draw-wall') return
-    if (!state.edit) return
-    stopEdit()
+  if (state.mode === 'draw-wall') return
+
+  if (doorEdit) {
+    stopDoorDrag()
     scheduleRerender()
+    return
+  }
+
+  if (!state.edit) return
+  stopEdit()
+  scheduleRerender()
 })
 
 draw.node.addEventListener('pointercancel', () => {
-    if (!state.edit) return
-    stopEdit()
+  if (doorEdit) {
+    stopDoorDrag()
     scheduleRerender()
+    return
+  }
+  if (!state.edit) return
+  stopEdit()
+  scheduleRerender()
 })
 
 // -------- start --------
@@ -701,19 +935,38 @@ syncUI()
 loadStudioTemplate()
 
 requestAnimationFrame(() => {
-    fitPlannerToWalls()
-    rerender()
+  fitPlannerToWalls()
+  rerender()
 })
 
 // resize (один)
 let rafResize = 0
 window.addEventListener('resize', () => {
-    cancelAnimationFrame(rafResize)
-    rafResize = requestAnimationFrame(() => {
-        fitPlannerToWalls()
-        rerender()
-    })
+  cancelAnimationFrame(rafResize)
+  rafResize = requestAnimationFrame(() => {
+    fitPlannerToWalls()
+    rerender()
+  })
 })
+
+window.addEventListener('keydown', (e) => {
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+  const mod = isMac ? e.metaKey : e.ctrlKey
+  if (!mod) return
+
+  if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (undo()) rerender()
+    return
+  }
+
+  if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+    e.preventDefault()
+    if (redo()) rerender()
+    return
+  }
+})
+
 
 // удобно для дебага в консоли
 window.state = state

@@ -1,6 +1,11 @@
 // renderer/render.js
 import { state, UNITS_PER_M, GRID_STEP_VIEW } from '../engine/state.js'
 import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
+import { computeRooms } from '../engine/rooms.js'
+import { fmtM2 } from '../engine/metrics.js'
+
+const DOOR_ENTRY_COLOR = '#4b2f23'     // тёмно-коричневый
+const DOOR_INTERIOR_COLOR = '#c8a07a'  // светло-коричневый
 
 
 const CAP_W = 28
@@ -289,7 +294,90 @@ export function render(draw) {
     }
   }
 
-  // 4) selected highlight + handles
+ const doors = state.doors || []
+
+for (const d of doors) {
+  const doorColor = (d.kind === 'entry') ? DOOR_ENTRY_COLOR : DOOR_INTERIOR_COLOR
+
+  const w = walls.find(x => x.id === d.wallId)
+  if (!w) continue
+
+  const a = w.a
+  const b = w.b
+
+  const t = Math.max(0, Math.min(1, d.t ?? 0.5))
+  const doorW = d.w ?? 75
+  const thick = d.thick ?? NOR_W
+
+  const cx = a.x + (b.x - a.x) * t
+  const cy = a.y + (b.y - a.y) * t
+
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len
+  const uy = dy / len
+
+  const half = doorW / 2
+  const p1 = { x: cx - ux * half, y: cy - uy * half }
+  const p2 = { x: cx + ux * half, y: cy + uy * half }
+
+  // видимая “вставка” двери (тут и красим!)
+  overlayG
+    .line(p1.x, p1.y, p2.x, p2.y)
+    .stroke({ width: thick, color: doorColor, linecap: 'butt', linejoin: 'round' })
+    .attr({ 'pointer-events': 'none' })
+
+  // ✅ кликабельность только для interior
+  if (d.kind === 'interior' && !d.locked) {
+    overlayG
+      .line(p1.x, p1.y, p2.x, p2.y)
+      .stroke({ width: Math.max(22, thick + 16), color: '#000', opacity: 0 })
+      .attr({
+        'pointer-events': 'stroke',
+        'data-door-id': d.id,
+      })
+  }
+}
+
+// ---- PREVIEW DOOR ----
+if (state.mode === 'draw-door' && state.previewDoor) {
+  const pd = state.previewDoor
+  const w = walls.find(x => x.id === pd.wallId)
+  if (w) {
+    const a = w.a
+    const b = w.b
+    const t = Math.max(0, Math.min(1, pd.t ?? 0.5))
+    const doorW = pd.w ?? 75
+    const thick = pd.thick ?? NOR_W
+
+    const cx = a.x + (b.x - a.x) * t
+    const cy = a.y + (b.y - a.y) * t
+
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const len = Math.hypot(dx, dy) || 1
+    const ux = dx / len
+    const uy = dy / len
+
+    const half = doorW / 2
+    const p1 = { x: cx - ux * half, y: cy - uy * half }
+    const p2 = { x: cx + ux * half, y: cy + uy * half }
+
+    overlayG
+      .line(p1.x, p1.y, p2.x, p2.y)
+      .stroke({
+        width: thick,
+        color: DOOR_INTERIOR_COLOR,
+        opacity: 0.9,
+        dasharray: '10 8',
+        linecap: 'butt',
+      })
+      .attr({ 'pointer-events': 'none' })
+  }
+}
+
+// 4) selected highlight + handles
   if (state.selectedWallId) {
     const w = normals.find(x => x.id === state.selectedWallId)
     if (w) {
@@ -356,65 +444,65 @@ export function render(draw) {
   const fontSize = 12 * invScale
   const pad = 3 * invScale
   // 1) length label for each wall
-const capCentroid = getCapitalsCentroid(walls)
+  const capCentroid = getCapitalsCentroid(walls)
 
-for (const w of walls) {
-  const posA = w.a
-  const posB = w.b
+  for (const w of walls) {
+    const posA = w.a
+    const posB = w.b
 
-  // длина — по строительной геометрии
-  let lenA, lenB
-  if (w.kind !== 'capital') {
-    lenA = w.va || w.a
-    lenB = w.vb || w.b
-  } else {
-    lenA = w.ia || w.a
-    lenB = w.ib || w.b
+    // длина — по строительной геометрии
+    let lenA, lenB
+    if (w.kind !== 'capital') {
+      lenA = w.va || w.a
+      lenB = w.vb || w.b
+    } else {
+      lenA = w.ia || w.a
+      lenB = w.ib || w.b
+    }
+
+    const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
+    const lenM = unitsToMeters(lenUnits)
+    const txt = formatMeters(lenM)
+
+    // позиция подписи — по ВИДИМОЙ геометрии (posA/posB)
+    const mid = midPoint(posA, posB)
+    const ang = readableRotation(angleDeg(posA, posB))
+
+    let nx, ny
+    if (w.kind === 'capital') {
+      ({ nx, ny } = outwardNormal(posA, posB, capCentroid)) // ✅ наружу
+    } else {
+      ({ nx, ny } = unitNormal(posA, posB))
+    }
+
+    const offsetFromWall =
+      (w.kind === 'capital' ? (CAP_W / 2 + 14) : 14) * invScale
+
+    const lx = mid.x + nx * offsetFromWall
+    const ly = mid.y + ny * offsetFromWall
+
+    const isSelected = w.id && w.id === state.selectedWallId
+    const fillText = isSelected ? SELECT_COLOR : DIM_COLOR
+
+    const t = dimsG.text(txt)
+    t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
+    t.fill(fillText)
+
+    const bb = t.bbox()
+    const bg = dimsG
+      .rect(bb.width + pad * 2, bb.height + pad * 2)
+      .fill({ color: DIM_BG, opacity: DIM_BG_OPACITY })
+      .radius(3 * invScale)
+
+    const g = dimsG.group()
+    g.add(bg)
+    g.add(t)
+
+    bg.move(lx - bb.width / 2 - pad, ly - bb.height / 2 - pad)
+    t.center(lx, ly)
+
+    g.rotate(ang, lx, ly)
   }
-
-  const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
-  const lenM = unitsToMeters(lenUnits)
-  const txt = formatMeters(lenM)
-
-  // позиция подписи — по ВИДИМОЙ геометрии (posA/posB)
-  const mid = midPoint(posA, posB)
-  const ang = readableRotation(angleDeg(posA, posB))
-
-  let nx, ny
-  if (w.kind === 'capital') {
-    ({ nx, ny } = outwardNormal(posA, posB, capCentroid)) // ✅ наружу
-  } else {
-    ({ nx, ny } = unitNormal(posA, posB))
-  }
-
- const offsetFromWall =
-  (w.kind === 'capital' ? (CAP_W / 2 + 14) : 14) * invScale
-
-  const lx = mid.x + nx * offsetFromWall
-  const ly = mid.y + ny * offsetFromWall
-
-  const isSelected = w.id && w.id === state.selectedWallId
-  const fillText = isSelected ? SELECT_COLOR : DIM_COLOR
-
-  const t = dimsG.text(txt)
-  t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
-  t.fill(fillText)
-
-  const bb = t.bbox()
-  const bg = dimsG
-    .rect(bb.width + pad * 2, bb.height + pad * 2)
-    .fill({ color: DIM_BG, opacity: DIM_BG_OPACITY })
-    .radius(3 * invScale)
-
-  const g = dimsG.group()
-  g.add(bg)
-  g.add(t)
-
-  bg.move(lx - bb.width / 2 - pad, ly - bb.height / 2 - pad)
-  t.center(lx, ly)
-
-  g.rotate(ang, lx, ly)
-}
 
 
   // 2) "inside box" label
@@ -503,6 +591,45 @@ for (const w of walls) {
       .stroke({ width: strokeW, color: '#fff', opacity: 0.9 })
       .attr({ 'pointer-events': 'none' })
   }
+
+  // ---- room labels ----
+  const rooms = computeRooms({ minAreaM2: 0.8 }) // порог можешь менять
+
+  // ❌ не показываем "общую площадь коробки" — обычно это самая большая room
+  let roomsToDraw = rooms
+  if (rooms.length > 1) {
+    const maxArea = Math.max(...rooms.map(r => r.areaM2))
+    roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
+  }
+
+
+  let roomsG = overlayG.findOne('#room-labels')
+  if (!roomsG) roomsG = overlayG.group().id('room-labels')
+  roomsG.clear()
+  roomsG.attr({ 'pointer-events': 'none' })
+
+  const fontWorld = 14 * invScale
+
+  for (const r of roomsToDraw) {
+    const txt = roomsG.text(`${fmtM2(r.areaM2)} м²`)
+    txt
+      .center(r.label.x, r.label.y)
+      .font({
+        size: fontWorld,
+        family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
+        weight: 700,
+      })
+      .fill('#111')
+
+    txt.attr({
+      'paint-order': 'stroke',
+      stroke: 'rgba(255,255,255,0.9)',
+      'stroke-width': fontWorld * 0.25,
+      'dominant-baseline': 'middle',
+      'text-anchor': 'middle',
+    })
+  }
+
 }
 
 

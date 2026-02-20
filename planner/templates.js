@@ -1,6 +1,6 @@
 // planner/templates.js
 import { state, CAP_W, NOR_W, OVERLAP } from '../engine/state.js'
-import { dist, projectPointToSegmentClamped } from '../engine/geom.js'
+import { projectPointToSegmentClamped } from '../engine/geom.js'
 
 let id = 1
 const W = (ax, ay, bx, by, kind = 'capital') => ({
@@ -11,7 +11,6 @@ const W = (ax, ay, bx, by, kind = 'capital') => ({
 })
 
 // --- НАСТРОЙКИ “геометрии стыка” ---
-// ✅ SNAP_DIST оставляем локально: это “дистанция прилипания” в world units
 const SNAP_DIST = 40 // world units
 
 function trimPointBack(from, to, trimLen) {
@@ -33,11 +32,8 @@ function snapAndTrimEndpoint(endpoint, otherEnd, capitals) {
     }
   }
 
-  if (!best) {
-    return { vis: endpoint, build: endpoint }
-  }
+  if (!best) return { vis: endpoint, build: endpoint }
 
-  // ✅ используем реальные константы из engine/state.js
   const trim = CAP_W / 2 + NOR_W / 2 - OVERLAP
   const build = best.q
   const vis = trimPointBack(otherEnd, build, trim)
@@ -52,8 +48,6 @@ function snapAndTrimNormalsToCapitals() {
   for (const w of state.walls) {
     if (w.kind !== 'normal') continue
 
-    // ✅ важно: считаем оба конца от исходных точек,
-    // чтобы второй конец не “переехал” из-за уже изменённого первого
     const a0 = { ...w.a }
     const b0 = { ...w.b }
 
@@ -63,10 +57,14 @@ function snapAndTrimNormalsToCapitals() {
     w.a = A.vis
     w.b = B.vis
 
-    // ✅ строительная геометрия (для метрик/размеров)
     w.va = A.build
     w.vb = B.build
   }
+}
+
+// простая дверь-id (не обязательно, но удобно)
+function did() {
+  return `d${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
 export function loadStudioTemplate() {
@@ -88,25 +86,64 @@ export function loadStudioTemplate() {
   const bathLeft = 520
   const bathRight = 820
 
+  // --- стены ---
+  const capTop = W(x0, y0, x1, y0, 'capital')
+  const capRightUp = W(x1, y0, x1, notchY, 'capital')
+  const capNotch = W(x1, notchY, notchX, notchY, 'capital')
+  const capRightDown = W(notchX, notchY, notchX, y1, 'capital')
+  const capBottom = W(notchX, y1, x0, y1, 'capital')
+  const capLeft = W(x0, y1, x0, y0, 'capital')
+
+  const nBed1 = W(bedLeft, bedTop, bedLeft, bedBottom, 'normal')
+  const nBed2 = W(bedLeft, bedBottom, x1, bedBottom, 'normal')
+
+  const nBath1 = W(bathLeft, bathTop, bathRight, bathTop, 'normal')
+  const nBath2 = W(bathLeft, bathTop, bathLeft, y1, 'normal')
+
   state.walls = [
-    // --- capital outer (основная коробка) ---
-    W(x0, y0, x1, y0, 'capital'),
-    W(x1, y0, x1, notchY, 'capital'),
-    W(x1, notchY, notchX, notchY, 'capital'),
-    W(notchX, notchY, notchX, y1, 'capital'),
-    W(notchX, y1, x0, y1, 'capital'),
-    W(x0, y1, x0, y0, 'capital'),
+    capTop,
+    capRightUp,
+    capNotch,
+    capRightDown,
+    capBottom,
+    capLeft,
 
-    // --- normals (шаблонные межкомнатные) ---
-    W(bedLeft, bedTop, bedLeft, bedBottom, 'normal'),
-    W(bedLeft, bedBottom, x1, bedBottom, 'normal'),
-
-    W(bathLeft, bathTop, bathRight, bathTop, 'normal'),
-    W(bathLeft, bathTop, bathLeft, y1, 'normal'),
+    nBed1,
+    nBed2,
+    nBath1,
+    nBath2,
   ]
 
   // ✅ подрезаем нормалы к капитальным
   snapAndTrimNormalsToCapitals()
 
+  // --- двери ---
+  // входная дверь (locked)
+  state.doors = [
+    {
+      id: did(),
+      kind: 'entry',
+      wallId: capBottom.id, // ✅ на капитальной
+      t: 0.25,
+      w: 90,
+      thick: CAP_W,
+      locked: true,
+    },
+
+    // пример межкомнатной (двигается)
+    {
+      id: did(),
+      kind: 'interior',
+      wallId: nBed2.id, // ✅ на normal
+      t: 0.5,
+      w: 75,
+      thick: NOR_W,
+    },
+  ]
+
+  // сброс интерактива
   state.draft = null
+  state.selectedWallId = null
+  state.hoverWallId = null
+  state.selectedDoorId = null
 }
