@@ -1,4 +1,4 @@
-
+// planner/app.js
 import {
   state,
   GRID_STEP_SNAP,
@@ -32,7 +32,11 @@ import {
 const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
 
-// coarse = мобилки/планшеты (hover не нужен)
+function setPlannerCursor(cursor) {
+  draw.node.style.cursor = cursor
+}
+
+// coarse = мобилки/планшеты (для допусков/UX), НЕ ДЛЯ отключения hover
 const isTouchLike = matchMedia('(pointer: coarse)').matches
 
 // -------- id generator for user walls --------
@@ -121,7 +125,6 @@ function initDPad() {
     if (document.hidden) stop()
   })
 }
-
 
 // ---------------- render throttle ----------------
 let raf = 0
@@ -229,14 +232,12 @@ function updateDeleteButtonState() {
   btnTrash.classList.toggle('is-danger', ok)
 }
 
-
 function updateDoorButtonState() {
   if (!btnDoor) return
   // в режиме draw-wall запрещаем, в остальном — всегда можно включить режим двери
   const ok = state.mode !== 'draw-wall'
   btnDoor.classList.toggle('is-disabled', !ok)
 }
-
 
 function updateStatus() {
   if (!status) return
@@ -272,6 +273,7 @@ function setMode(mode) {
 
   state.ui = state.ui || {}
   state.ui.lockPan = false
+  
 
   if (mode === 'draw-wall') {
     state.selectedWallId = null
@@ -293,8 +295,7 @@ function setMode(mode) {
   if (mode !== 'draw-door') {
     state.previewDoor = null
   }
-
-
+setPlannerCursor('default')
   syncUI()
   rerender()
 }
@@ -321,8 +322,7 @@ btnDoor?.addEventListener('click', (e) => {
   setMode(state.mode === 'draw-door' ? 'idle' : 'draw-door')
 })
 
-
-// ---------------- delete selected wall ----------------
+// ---------------- delete selected wall/door ----------------
 function deleteSelectedElement() {
   // 0) Не удаляем во время рисования
   if (state.mode === 'draw-wall' || state.mode === 'draw-door') return
@@ -331,7 +331,7 @@ function deleteSelectedElement() {
   if (state.selectedDoorId) {
     const id = state.selectedDoorId
     const d = (state.doors || []).find(x => x.id === id)
-    if (!d || d.kind !== 'interior' || d.locked) return // entry не трогаем
+    if (!d || d.kind !== 'interior' || d.locked) return
 
     const idx = (state.doors || []).findIndex(x => x.id === id)
     if (idx === -1) return
@@ -361,16 +361,13 @@ function deleteSelectedElement() {
   scheduleRerender()
 }
 
-
-btnTrash?.addEventListener('click', deleteSelectedElement
-)
+btnTrash?.addEventListener('click', deleteSelectedElement)
 
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Delete' && e.key !== 'Backspace') return
   const tag = document.activeElement?.tagName?.toLowerCase()
   if (tag === 'input' || tag === 'textarea') return
-  deleteSelectedElement
-    ()
+  deleteSelectedElement()
 })
 
 // ---------------- undo/redo hotkeys ----------------
@@ -409,7 +406,7 @@ document.getElementById('zoom-reset')?.addEventListener('click', () => {
 // -------- init interactions --------
 initViewport(draw)
 initPointer(draw, { newWallId })
-initDPad() // ✅ ВОТ ЭТОГО НЕ ХВАТАЛО
+initDPad()
 window.addEventListener('planner:changed', scheduleRerender)
 
 // -------- undo/redo buttons --------
@@ -451,7 +448,6 @@ btnRedo?.addEventListener('click', (e) => {
   applyRedo()
 })
 
-
 // ---------------- DOORS: add + select + drag ----------------
 function getDoorById(id) {
   return (state.doors || []).find(d => d.id === id) || null
@@ -484,6 +480,9 @@ function clampDoorTToWallParams(t, doorW, wall) {
 }
 
 function updateDoorPreviewAtPoint(p) {
+  // курсор по умолчанию, дальше можем переключить на crosshair
+  setPlannerCursor('default')
+
   const wallId = pickNormalWallAt(p, { tolPx: isTouchLike ? 22 : 18 })
   if (!wallId) {
     if (state.previewDoor) {
@@ -502,6 +501,21 @@ function updateDoorPreviewAtPoint(p) {
     return
   }
 
+  // ✅ если на этой стене уже есть interior-дверь — preview не показываем
+  const hasDoor = (state.doors || []).some(d =>
+    d.wallId === wallId && d.kind === 'interior' && !d.locked
+  )
+  if (hasDoor) {
+    if (state.previewDoor) {
+      state.previewDoor = null
+      scheduleRerender()
+    }
+    return
+  }
+
+  // ✅ сюда дошли значит можно ставить дверь → курсор crosshair
+  setPlannerCursor('pointer')
+
   let t = projectPointToWallT(p, w.a, w.b)
   t = clampDoorTToWallParams(t, 75, w)
 
@@ -519,9 +533,9 @@ function updateDoorPreviewAtPoint(p) {
 }
 
 let doorEdit = null
-let doorPlace = null // ✅ режим "ставим дверь": pointerId + lastPoint
+let doorPlace = null // режим "ставим дверь": pointerId
 
-function startDoorDrag(doorId, mouseWorld) {
+function startDoorDrag(doorId) {
   const d = getDoorById(doorId)
   if (!d || d.kind !== 'interior' || d.locked) return
 
@@ -594,15 +608,13 @@ function nudgeSelectedDoorByArrow(key) {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
   const tag = document.activeElement?.tagName?.toLowerCase()
   if (tag === 'input' || tag === 'textarea') return
   nudgeSelectedDoorByArrow(e.key)
 })
 
 // ---------------- hover highlight (mouse only) ----------------
-
-
 draw.node.addEventListener('pointerleave', () => {
   let changed = false
   if (state.hoverWallId) { state.hoverWallId = null; changed = true }
@@ -643,57 +655,7 @@ function stopEdit() {
   historyEnd()
 }
 
-/* ------------------ helpers for edit ------------------ */
 const clamp2 = (v, a, b) => Math.max(a, Math.min(b, v))
-
-function projectPointToSegmentClamped(p, a, b) {
-  const abx = b.x - a.x, aby = b.y - a.y
-  const apx = p.x - a.x, apy = p.y - a.y
-  const ab2 = abx * abx + aby * aby
-
-  if (ab2 < 1e-9) {
-    const d = Math.hypot(p.x - a.x, p.y - a.y)
-    return { point: { ...a }, d }
-  }
-
-  let t = (apx * abx + apy * aby) / ab2
-  t = clamp2(t, 0, 1)
-  const q = { x: a.x + abx * t, y: a.y + aby * t }
-  const d = Math.hypot(p.x - q.x, p.y - q.y)
-  return { point: q, d }
-}
-
-function trimPointBack(from, to, trimLen) {
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const len = Math.hypot(dx, dy) || 1
-  const ux = dx / len
-  const uy = dy / len
-  return { x: to.x - ux * trimLen, y: to.y - uy * trimLen }
-}
-
-function nearestPointOnCapitals(p) {
-  const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
-  if (!caps.length) return null
-
-  let best = null
-  for (const c of caps) {
-    const pr = projectPointToSegmentClamped(p, c.a, c.b)
-    if (!best || pr.d < best.d) best = pr
-  }
-  return best
-}
-
-function snapTrimEndToCapital(end, otherEnd, snapPx = 22) {
-  const scale = Math.max(1e-6, state.view.scale)
-  const tolWorld = snapPx / scale
-
-  const hit = nearestPointOnCapitals(end)
-  if (!hit || hit.d > tolWorld) return null
-
-  const trimLen = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
-  return trimPointBack(otherEnd, hit.point, trimLen)
-}
 
 function applyEdit(mouseWorld) {
   const ed = state.edit
@@ -744,8 +706,11 @@ function applyEdit(mouseWorld) {
     newVB = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
     newVB = smartSnapPoint(newVB, newVA, snapOpts)
   }
-const MIN_WALL_LEN = 50 // см
-if (Math.hypot(newVB.x - newVA.x, newVB.y - newVA.y) < MIN_WALL_LEN) return
+
+  // ✅ минимальная длина стены (см)
+  const MIN_WALL_LEN = 50
+  if (Math.hypot(newVB.x - newVA.x, newVB.y - newVA.y) < MIN_WALL_LEN) return
+
   if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
 
   const old = {
@@ -780,7 +745,6 @@ if (Math.hypot(newVB.x - newVA.x, newVB.y - newVA.y) < MIN_WALL_LEN) return
 // ---------------- POINTER: select door / wall / empty ----------------
 draw.node.addEventListener('pointerdown', (e) => {
   if (state.mode === 'draw-door') {
-    // ✅ начинаем "ставить дверь" даже на мобиле (без hover)
     const p = screenToWorld(draw, e.clientX, e.clientY)
 
     doorPlace = { pointerId: e.pointerId }
@@ -789,21 +753,22 @@ draw.node.addEventListener('pointerdown', (e) => {
     // обновляем preview прямо сейчас
     updateDoorPreviewAtPoint(p)
 
-    // если уже есть валидный preview — можно сразу поставить "по тапу"
     const pd = state.previewDoor
     if (pd && pd.wallId) {
-      historyCommit('add-door')
       state.doors = state.doors || []
-      // ✅ только одна дверь на стену
-const existsOnWall = (state.doors || []).some(d => d.wallId === pd.wallId && d.kind === 'interior' && !d.locked)
-if (existsOnWall) {
-  // можно вывести подсказку
-  hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
-  // preview сбросим, чтобы не казалось что "ставится"
-  state.previewDoor = null
-  scheduleRerender()
-  return
-}
+
+      // ✅ только одна interior-дверь на стену
+      const existsOnWall = (state.doors || []).some(d =>
+        d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
+      )
+      if (existsOnWall) {
+        hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
+        state.previewDoor = null
+        scheduleRerender()
+        return
+      }
+
+      historyCommit('add-door') // ✅ только если реально добавляем
       state.doors.push({
         id: newDoorId(),
         kind: 'interior',
@@ -812,19 +777,16 @@ if (existsOnWall) {
         w: 75,
         thick: NOR_W,
       })
+      setPlannerCursor('default')
 
-      // ✅ НЕ выбираем дверь автоматически (чтобы не активировалась кнопка удаления)
       state.selectedDoorId = null
       state.selectedWallId = null
 
-      // оставляем режим draw-door включенным (можно ставить много)
-      // preview сбрасываем, следующий тап/движение обновит
       state.previewDoor = null
       scheduleRerender()
     }
     return
   }
-
 
   if (state.mode === 'draw-wall') return
   if (e.button !== 0 && e.pointerType === 'mouse') return
@@ -832,20 +794,20 @@ if (existsOnWall) {
 
   const p = screenToWorld(draw, e.clientX, e.clientY)
 
-  // ✅ 0) door hit first (interior only)
+  // 0) door hit first
   const doorId = findDoorIdFromEventTarget(e.target)
   if (doorId) {
     const d = getDoorById(doorId)
     if (d && d.kind === 'interior' && !d.locked) {
       state.selectedDoorId = doorId
       state.selectedWallId = null
-      startDoorDrag(doorId, p)
+      startDoorDrag(doorId)
       scheduleRerender()
       return
     }
   }
 
-  // ✅ 1) wall handle
+  // 1) wall handle
   const h = typeof pickWallHandleAt === 'function'
     ? pickWallHandleAt(p, { tolPx: 14 })
     : null
@@ -858,7 +820,7 @@ if (existsOnWall) {
     return
   }
 
-  // ✅ 2) wall body
+  // 2) wall body
   const id = pickNormalWallAt(p, { tolPx: 16 })
   if (id) {
     state.selectedWallId = id
@@ -868,41 +830,36 @@ if (existsOnWall) {
     return
   }
 
-  // ✅ 3) empty
+  // 3) empty
   state.selectedWallId = null
   state.selectedDoorId = null
   scheduleRerender()
 })
 
 draw.node.addEventListener('pointermove', (e) => {
-  // debug
-  if (e.pointerType === 'mouse') {
-    // раз в ~30 кадров, чтобы не спамить
-    if ((performance.now() | 0) % 500 < 16) console.log('ui', state.ui)
-  }
   const p = screenToWorld(draw, e.clientX, e.clientY)
 
-  // ✅ 1) режим установки двери: на мобиле без hover
+  // 1) установка двери
   if (state.mode === 'draw-door') {
     updateDoorPreviewAtPoint(p)
     return
   }
 
-  // ✅ 2) drag двери (если тянем выбранную)
+  // 2) drag двери
   if (doorEdit) {
     applyDoorDrag(p)
     scheduleRerender()
     return
   }
 
-  // ✅ 3) drag стены
+  // 3) drag стены
   if (state.mode !== 'draw-wall' && state.edit) {
     applyEdit(p)
     scheduleRerender()
     return
   }
 
-  // ✅  // ✅ 4) hover (мышь): сначала двери, потом стены
+  // 4) hover (ТОЛЬКО мышь)
   if (e.pointerType !== 'mouse') return
   if (state.mode === 'draw-wall' || state.mode === 'draw-door') return
   if (state.ui?.lockPan || state.ui?.dragged || state.edit || doorEdit) return
@@ -910,13 +867,11 @@ draw.node.addEventListener('pointermove', (e) => {
   const doorHover = findDoorIdFromEventTarget(e.target)
   if (doorHover !== state.hoverDoorId) {
     state.hoverDoorId = doorHover
-    // если навели на дверь — стену по hover не подсвечиваем
     if (doorHover) state.hoverWallId = null
     scheduleRerender()
     return
   }
 
-  // если двери нет — обычный hover стен
   const wallHover = findWallIdFromEventTarget(e.target)
   if (wallHover !== state.hoverWallId) {
     state.hoverWallId = wallHover
@@ -926,7 +881,7 @@ draw.node.addEventListener('pointermove', (e) => {
 })
 
 draw.node.addEventListener('pointerup', (e) => {
-  // ✅ если ставили дверь (draw-door на мобиле/десктопе) — отпускаем capture
+  // если ставили дверь — отпускаем capture
   if (doorPlace && doorPlace.pointerId === e.pointerId) {
     draw.node.releasePointerCapture?.(e.pointerId)
     doorPlace = null
@@ -974,25 +929,6 @@ window.addEventListener('resize', () => {
     rerender()
   })
 })
-
-window.addEventListener('keydown', (e) => {
-  const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
-  const mod = isMac ? e.metaKey : e.ctrlKey
-  if (!mod) return
-
-  if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
-    e.preventDefault()
-    if (undo()) rerender()
-    return
-  }
-
-  if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
-    e.preventDefault()
-    if (redo()) rerender()
-    return
-  }
-})
-
 
 // удобно для дебага в консоли
 window.state = state
