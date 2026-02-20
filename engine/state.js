@@ -7,20 +7,24 @@ export const state = {
   walls: [],
   doors: [],
 
-  // selection
+  // selection / hover
   selectedWallId: null,
   hoverWallId: null,
-  selectedDoorId: null,
 
-  // interaction/render helpers
+  selectedDoorId: null,
+  hoverDoorId: null, // ✅ для hover дверей (если подключишь в app.js/render.js)
+
+  // previews
   previewWall: null,
+  previewDoor: null, // ✅ { wallId, t, w, thick }
+
+  // viewport
   view: { scale: 1, offsetX: 0, offsetY: 0 },
+
+  // edit state
   edit: null,
   ui: { dragged: false, lockPan: false, snapPulse: null },
   snapPoint: null,
-
-  previewDoor: null, // { wallId, t, w, thick }
-  selectedDoorId: null,
 }
 
 // ---- Units / grid ----
@@ -90,10 +94,9 @@ export function loadOneRoomTemplate() {
       t: 0.5,           // центр двери вдоль стены 0..1
       w: 75,            // ширина проёма в см (world=cm)
       thick: NOR_W,     // толщина отрисовки двери
-      // optional: можно добавить rotation/hinge потом
     },
 
-    // Пример входной двери: не двигается/не редактируется (ты это решишь в UI)
+    // Пример входной двери: не двигается/не редактируется
     {
       id: wid(),
       kind: 'entry',
@@ -101,18 +104,22 @@ export function loadOneRoomTemplate() {
       t: 0.2,
       w: 90,             // обычно входная шире
       thick: CAP_W,      // как капитальная, чтобы красиво
-      locked: true,      // удобно: UI/interaction просто игнорит locked
+      locked: true,      // UI/interaction игнорит locked
     },
   ]
 
-  // сброс селектов
+  // сброс селектов/ховеров
   state.selectedWallId = null
   state.hoverWallId = null
   state.selectedDoorId = null
+  state.hoverDoorId = null
 
-  // сброс режима/драфта/редактора
-  state.mode = 'select'
+  // сброс превью
   state.previewWall = null
+  state.previewDoor = null
+
+  // сброс режима/редактора
+  state.mode = 'select'
   state.edit = null
   state.ui = { dragged: false, lockPan: false, snapPulse: null }
   state.snapPoint = null

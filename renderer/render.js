@@ -6,6 +6,8 @@ import { fmtM2 } from '../engine/metrics.js'
 
 const DOOR_ENTRY_COLOR = '#4b2f23'     // тёмно-коричневый
 const DOOR_INTERIOR_COLOR = '#c8a07a'  // светло-коричневый
+const DOOR_SELECTED_COLOR = '#0a84ff'   // как select стен
+const DOOR_PREVIEW_COLOR = 'rgba(196,154,108,0.75)'
 
 
 const CAP_W = 28
@@ -14,6 +16,8 @@ const NOR_W = 10
 const CAP_COLOR = '#111'
 const NOR_COLOR = '#343938'
 const SELECT_COLOR = '#0a84ff'
+
+
 
 // cursor colors
 const CURSOR_IDLE = '#111'
@@ -294,11 +298,17 @@ export function render(draw) {
     }
   }
 
- const doors = state.doors || []
+
+
+// ---- DOORS (after walls) ----
+const doors = state.doors || []
 
 for (const d of doors) {
-  const doorColor = (d.kind === 'entry') ? DOOR_ENTRY_COLOR : DOOR_INTERIOR_COLOR
+  const isDoorSelected = d.id && d.id === state.selectedDoorId
+  const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
 
+  let doorColor = (d.kind === 'entry') ? DOOR_ENTRY_COLOR : DOOR_INTERIOR_COLOR
+  if (isDoorHovered || isDoorSelected) doorColor = DOOR_SELECTED_COLOR
   const w = walls.find(x => x.id === d.wallId)
   if (!w) continue
 
@@ -322,13 +332,19 @@ for (const d of doors) {
   const p1 = { x: cx - ux * half, y: cy - uy * half }
   const p2 = { x: cx + ux * half, y: cy + uy * half }
 
-  // видимая “вставка” двери (тут и красим!)
+  // видимая “вставка” двери
   overlayG
     .line(p1.x, p1.y, p2.x, p2.y)
-    .stroke({ width: thick, color: doorColor, linecap: 'butt', linejoin: 'round' })
+    .stroke({
+      width: (isDoorSelected || isDoorHovered) ? (thick + 2) : thick,
+      color: doorColor,
+      linecap: 'butt',
+      linejoin: 'round',
+      opacity: 1,
+    })
     .attr({ 'pointer-events': 'none' })
 
-  // ✅ кликабельность только для interior
+  // кликабельность только для interior (entry вообще не кликается)
   if (d.kind === 'interior' && !d.locked) {
     overlayG
       .line(p1.x, p1.y, p2.x, p2.y)
@@ -347,6 +363,7 @@ if (state.mode === 'draw-door' && state.previewDoor) {
   if (w) {
     const a = w.a
     const b = w.b
+
     const t = Math.max(0, Math.min(1, pd.t ?? 0.5))
     const doorW = pd.w ?? 75
     const thick = pd.thick ?? NOR_W
@@ -368,8 +385,8 @@ if (state.mode === 'draw-door' && state.previewDoor) {
       .line(p1.x, p1.y, p2.x, p2.y)
       .stroke({
         width: thick,
-        color: DOOR_INTERIOR_COLOR,
-        opacity: 0.9,
+        color: DOOR_PREVIEW_COLOR,
+        opacity: 1,
         dasharray: '10 8',
         linecap: 'butt',
       })

@@ -17,13 +17,13 @@ export function initViewport(draw) {
 
   node.addEventListener('pointerdown', (e) => {
     // ❌ в режиме рисования — пан не нужен
-    if (state.mode === 'draw-wall') return
+    if (state.mode === 'draw-wall' || state.mode === 'draw-door') return
     if (state.ui.lockPan) return
     if (e.button !== 0 && e.pointerType === 'mouse') return
 
-    // ✅ если нажали на стену (hit-line) — НЕ панорамируем
-    const hitWall = e.target?.closest?.('[data-wall-id]')
-    if (hitWall) return
+    // ✅ если нажали на интерактив (стена/дверь/хэндлы) — НЕ панорамируем
+    const hitInteractive = e.target?.closest?.('[data-wall-id], [data-door-id], [data-handle]')
+    if (hitInteractive) return
 
     isDown = true
     isDragging = false
@@ -60,9 +60,16 @@ export function initViewport(draw) {
   const stop = (e) => {
     isDown = false
     isDragging = false
+    state.ui.dragged = false            // ✅ критично
     node.releasePointerCapture?.(e.pointerId)
   }
 
   node.addEventListener('pointerup', stop)
   node.addEventListener('pointercancel', stop)
+  node.addEventListener('pointerleave', stop) // ✅ страховка
+  window.addEventListener('blur', () => {     // ✅ страховка
+    isDown = false
+    isDragging = false
+    state.ui.dragged = false
+  })
 }
