@@ -2,6 +2,7 @@
 import { state, UNITS_PER_M, GRID_STEP_VIEW } from '../engine/state.js'
 import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 
+
 const CAP_W = 28
 const NOR_W = 10
 
@@ -104,6 +105,39 @@ export function fitToWalls(draw, opts = {}) {
   state.view.scale = s
   state.view.offsetX = sx - cx * s
   state.view.offsetY = sy - cy * s
+}
+
+function getCapitalsCentroid(walls) {
+  const caps = walls.filter(w => w.kind === 'capital')
+  if (!caps.length) return { x: 0, y: 0 }
+
+  // берём точки a (у тебя капы идут кольцом, этого достаточно)
+  let sx = 0, sy = 0, n = 0
+  for (const w of caps) {
+    sx += w.a.x
+    sy += w.a.y
+    n++
+  }
+  return { x: sx / n, y: sy / n }
+}
+
+/**
+ * Возвращает нормаль (nx, ny), направленную НАРУЖУ относительно centroid.
+ * Логика: если шаг по нормали приближает к центру — это внутрь, значит надо перевернуть.
+ */
+function outwardNormal(a, b, centroid) {
+  const { nx, ny } = unitNormal(a, b)
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+
+  const eps = 1 // маленький шаг в world
+  const p1 = { x: mid.x + nx * eps, y: mid.y + ny * eps }
+  const p2 = { x: mid.x - nx * eps, y: mid.y - ny * eps }
+
+  const d1 = Math.hypot(p1.x - centroid.x, p1.y - centroid.y)
+  const d2 = Math.hypot(p2.x - centroid.x, p2.y - centroid.y)
+
+  // если p1 ближе к центру — нормаль смотрит внутрь, переворачиваем
+  return d1 < d2 ? { nx: -nx, ny: -ny } : { nx, ny }
 }
 
 /* =========================
@@ -321,56 +355,67 @@ export function render(draw) {
 
   const fontSize = 12 * invScale
   const pad = 3 * invScale
-
   // 1) length label for each wall
-  for (const w of walls) {
-    const posA = w.a
-    const posB = w.b
+const capCentroid = getCapitalsCentroid(walls)
 
-    // длина — по строительной геометрии
-    let lenA, lenB
-    if (w.kind !== 'capital') {
-      lenA = w.va || w.a
-      lenB = w.vb || w.b
-    } else {
-      lenA = w.ia || w.a
-      lenB = w.ib || w.b
-    }
+for (const w of walls) {
+  const posA = w.a
+  const posB = w.b
 
-    const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
-    const lenM = unitsToMeters(lenUnits)
-    const txt = formatMeters(lenM)
-
-    const mid = midPoint(posA, posB)
-    const ang = readableRotation(angleDeg(posA, posB))
-    const { nx, ny } = unitNormal(posA, posB)
-
-    const offsetFromWall = (w.kind === 'capital' ? 24 : 14) * invScale
-    const lx = mid.x + nx * offsetFromWall
-    const ly = mid.y + ny * offsetFromWall
-
-    const isSelected = w.id && w.id === state.selectedWallId
-    const fillText = isSelected ? SELECT_COLOR : DIM_COLOR
-
-    const t = dimsG.text(txt)
-    t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
-    t.fill(fillText)
-
-    const bb = t.bbox()
-    const bg = dimsG
-      .rect(bb.width + pad * 2, bb.height + pad * 2)
-      .fill({ color: DIM_BG, opacity: DIM_BG_OPACITY })
-      .radius(3 * invScale)
-
-    const g = dimsG.group()
-    g.add(bg)
-    g.add(t)
-
-    bg.move(lx - bb.width / 2 - pad, ly - bb.height / 2 - pad)
-    t.center(lx, ly)
-
-    g.rotate(ang, lx, ly)
+  // длина — по строительной геометрии
+  let lenA, lenB
+  if (w.kind !== 'capital') {
+    lenA = w.va || w.a
+    lenB = w.vb || w.b
+  } else {
+    lenA = w.ia || w.a
+    lenB = w.ib || w.b
   }
+
+  const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
+  const lenM = unitsToMeters(lenUnits)
+  const txt = formatMeters(lenM)
+
+  // позиция подписи — по ВИДИМОЙ геометрии (posA/posB)
+  const mid = midPoint(posA, posB)
+  const ang = readableRotation(angleDeg(posA, posB))
+
+  let nx, ny
+  if (w.kind === 'capital') {
+    ({ nx, ny } = outwardNormal(posA, posB, capCentroid)) // ✅ наружу
+  } else {
+    ({ nx, ny } = unitNormal(posA, posB))
+  }
+
+ const offsetFromWall =
+  (w.kind === 'capital' ? (CAP_W / 2 + 14) : 14) * invScale
+
+  const lx = mid.x + nx * offsetFromWall
+  const ly = mid.y + ny * offsetFromWall
+
+  const isSelected = w.id && w.id === state.selectedWallId
+  const fillText = isSelected ? SELECT_COLOR : DIM_COLOR
+
+  const t = dimsG.text(txt)
+  t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
+  t.fill(fillText)
+
+  const bb = t.bbox()
+  const bg = dimsG
+    .rect(bb.width + pad * 2, bb.height + pad * 2)
+    .fill({ color: DIM_BG, opacity: DIM_BG_OPACITY })
+    .radius(3 * invScale)
+
+  const g = dimsG.group()
+  g.add(bg)
+  g.add(t)
+
+  bg.move(lx - bb.width / 2 - pad, ly - bb.height / 2 - pad)
+  t.center(lx, ly)
+
+  g.rotate(ang, lx, ly)
+}
+
 
   // 2) "inside box" label
   {
@@ -386,7 +431,7 @@ export function render(draw) {
       const rx = 6 * invScale
 
       const cx = (bb.minX + bb.maxX) / 2
-      const y = bb.minY - 40 * invScale
+      const y = bb.minY - 70 * invScale
 
       const g = dimsG.group()
 
@@ -459,3 +504,6 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 }
+
+
+
