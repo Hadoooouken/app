@@ -55,9 +55,6 @@ const btnTrash = document.getElementById('btn-trash')
 const hint = document.getElementById('hint')
 const status = document.getElementById('status')
 
-// -------- undo/redo buttons --------
-
-
 // ---------------- render throttle ----------------
 let raf = 0
 function scheduleRerender() {
@@ -67,6 +64,34 @@ function scheduleRerender() {
         rerender()
     })
 }
+
+function getFitPaddingPx() {
+    // размеры видимой области SVG
+    const rect = draw.node.getBoundingClientRect()
+
+    // читаем проценты из CSS-переменных
+    const css = getComputedStyle(document.documentElement)
+    const padInlinePct = parseFloat(css.getPropertyValue('--planner-pad-inline')) || 10
+    const padBlockPct = parseFloat(css.getPropertyValue('--planner-pad-block')) || 10
+
+    // переводим в px
+    const pxX = (rect.width * padInlinePct) / 100
+    const pxY = (rect.height * padBlockPct) / 100
+
+    // fitToWalls у тебя принимает один padding, поэтому берём “безопасный”
+    // (чтобы и по X, и по Y точно влезло)
+    let padding = Math.min(pxX, pxY)
+
+    // небольшой clamp, чтобы на очень узких/очень широких не было странно
+    padding = Math.max(24, Math.min(320, padding))
+
+    return padding
+}
+
+function fitPlannerToWalls() {
+    fitToWalls(draw, { padding: getFitPaddingPx(), maxScale: 1.1 })
+}
+
 
 // ---------------- status / delete btn ----------------
 function updateDeleteButtonState() {
@@ -162,7 +187,8 @@ function initDPad() {
         btn.classList.add('is-pressed')
 
         if (dir === 'center') {
-            fitToWalls(draw, { padding: 240, maxScale: 1.1 })
+            fitPlannerToWalls()
+
             rerender()
             setTimeout(stop, 0)
             return
@@ -316,7 +342,7 @@ document.getElementById('zoom-out')?.addEventListener('click', () => {
     scheduleRerender()
 })
 document.getElementById('zoom-reset')?.addEventListener('click', () => {
-    fitToWalls(draw, { padding: 240, maxScale: 1.1 })
+    fitPlannerToWalls()
     scheduleRerender()
 })
 
@@ -672,7 +698,7 @@ syncUI()
 loadStudioTemplate()
 
 requestAnimationFrame(() => {
-    fitToWalls(draw, { padding: 240, maxScale: 1.1 })
+    fitPlannerToWalls()
     rerender()
 })
 
@@ -681,7 +707,7 @@ let rafResize = 0
 window.addEventListener('resize', () => {
     cancelAnimationFrame(rafResize)
     rafResize = requestAnimationFrame(() => {
-        fitToWalls(draw, { padding: 240, maxScale: 1.1 })
+        fitPlannerToWalls()
         rerender()
     })
 })

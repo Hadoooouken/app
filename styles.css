@@ -7,6 +7,8 @@
   --text: #1f2937;
   --muted: rgba(31, 41, 55, 0.65);
   --radius: 16px;
+  --planner-pad-inline: 10; /* % слева/справа */
+  --planner-pad-block: 10; /* % сверху/снизу */
 
   /* ✅ базовые отступы + safe-area */
   --pad: 16px;
@@ -22,6 +24,8 @@
 
   /* ✅ ширина правого стека (3 кнопки dpad) */
   --stack-w: calc(var(--btn) * 3 + var(--gap) * 2);
+
+  --ui-top-shift: 50px; /* + вниз, - вверх */
 }
 
 /* RESET */
@@ -243,9 +247,10 @@ button,
   right: calc(var(--pad) + var(--safe-right));
   top: calc(var(--pad) + var(--safe-top));
   display: grid;
-  grid-auto-rows: var(--btn);
-  gap: var(--gap);
+  grid-template-columns: 1fr 1fr;
   z-index: 10;
+  column-gap: 0.625rem;
+  row-gap: 0.3125rem;
 }
 
 .zoom__btn {
@@ -386,6 +391,41 @@ button,
 /* =========================
    LAPTOP 1024+
 ========================= */
+
+/* =========================
+   <= 1023px: dpad рядом с zoom (в один ряд)
+========================= */
+@media (max-width: 1023px) {
+  :root {
+    /* ширина правой колонны с zoom (2 кнопки в ряд) */
+    --zoom-w: calc(var(--btn) * 2 + 0.625rem); /* column-gap у тебя 0.625rem */
+  }
+
+  /* zoom остаётся справа сверху */
+  .zoom {
+    /* top: var(--ui-top-shift); */
+     top: 100px;
+    right: calc(var(--pad) + var(--safe-right));
+    bottom: auto;
+  }
+
+  /* dpad ставим слева от zoom, а не под ним */
+  .dpad {
+    /* тот же верх, но чуть ниже статуса */
+    top: calc(var(--pad) + var(--safe-top) + 56px);
+    right: calc(var(--pad) + var(--safe-right) + var(--zoom-w) + 12px);
+  }
+
+  /* статус — чтобы не залезал под оба блока */
+  .status {
+    right: calc(
+      var(--pad) + var(--safe-right) +
+      var(--zoom-w) + 12px +
+      var(--stack-w) + 12px
+    );
+  }
+}
+
 
 @media (min-width: 1024px) {
   .panel {

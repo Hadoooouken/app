@@ -65,15 +65,19 @@ function trimWallToCapitals(wall) {
     const caps = (state.walls || []).filter(w => w.kind === 'capital')
     if (!caps.length) return wall
 
+    // ✅ сохраняем исходные точки (важно для L-стыков)
+    const a0 = { ...wall.a }
+    const b0 = { ...wall.b }
+
     // строительная геометрия (для метрик)
-    wall.va = { ...wall.a }
-    wall.vb = { ...wall.b }
+    wall.va = { ...a0 }
+    wall.vb = { ...b0 }
 
     const scale = Math.max(1e-6, state.view.scale)
     const tolWorld = 22 / scale
     const trimLenVisual = CAP_W / 2 + NOR_W / 2 - OVERLAP
 
-    const snapTrimEnd = (endKey, end, other) => {
+    const snapEnd = (end, other) => {
         let best = null
 
         for (const c of caps) {
@@ -82,16 +86,23 @@ function trimWallToCapitals(wall) {
             if (d <= tolWorld && (!best || d < best.d)) best = { q, d }
         }
 
-        if (!best) return end
+        if (!best) return { end, snapped: null }
 
-        if (endKey === 'a') wall.va = { ...best.q }
-        else wall.vb = { ...best.q }
-
-        return trimPointBack(other, best.q, trimLenVisual)
+        // end = видимый тримнутый конец
+        // snapped = точка касания (для va/vb)
+        return { end: trimPointBack(other, best.q, trimLenVisual), snapped: best.q }
     }
 
-    wall.a = snapTrimEnd('a', wall.a, wall.b)
-    wall.b = snapTrimEnd('b', wall.b, wall.a)
+    // ✅ считаем оба конца от ОДНИХ И ТЕХ ЖЕ исходных a0/b0
+    const aRes = snapEnd(a0, b0)
+    const bRes = snapEnd(b0, a0)
+
+    wall.a = aRes.end
+    wall.b = bRes.end
+
+    // ✅ va/vb — в точку касания (если была), иначе остаётся исходное
+    if (aRes.snapped) wall.va = { ...aRes.snapped }
+    if (bRes.snapped) wall.vb = { ...bRes.snapped }
 
     return wall
 }
@@ -342,9 +353,9 @@ export function initPointer(draw, { newWallId } = {}) {
                 resetAll()
                 return
             }
-   historyCommit('add wall')
-state.walls.push(newWall)
-resetAll()
+            historyCommit('add wall')
+            state.walls.push(newWall)
+            resetAll()
 
             return
         }
@@ -399,7 +410,7 @@ resetAll()
         }
         historyCommit('add wall')
         state.walls.push(newWall)
-        
+
         // after commit
         firstPoint = null
         state.previewWall = null

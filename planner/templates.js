@@ -1,5 +1,5 @@
 // planner/templates.js
-import { state } from '../engine/state.js'
+import { state, CAP_W, NOR_W, OVERLAP } from '../engine/state.js'
 import { dist, projectPointToSegmentClamped } from '../engine/geom.js'
 
 let id = 1
@@ -11,8 +11,7 @@ const W = (ax, ay, bx, by, kind = 'capital') => ({
 })
 
 // --- НАСТРОЙКИ “геометрии стыка” ---
-const CAP_W = 28
-const NOR_W = 10
+// ✅ SNAP_DIST оставляем локально: это “дистанция прилипания” в world units
 const SNAP_DIST = 40 // world units
 
 function trimPointBack(from, to, trimLen) {
@@ -29,14 +28,16 @@ function snapAndTrimEndpoint(endpoint, otherEnd, capitals) {
 
   for (const c of capitals) {
     const pr = projectPointToSegmentClamped(endpoint, c.a, c.b)
-    if (pr.d <= SNAP_DIST && (!best || pr.d < best.d)) best = { q: pr.point, d: pr.d }
+    if (pr.d <= SNAP_DIST && (!best || pr.d < best.d)) {
+      best = { q: pr.point, d: pr.d }
+    }
   }
 
   if (!best) {
     return { vis: endpoint, build: endpoint }
   }
 
-  const OVERLAP = 5
+  // ✅ используем реальные константы из engine/state.js
   const trim = CAP_W / 2 + NOR_W / 2 - OVERLAP
   const build = best.q
   const vis = trimPointBack(otherEnd, build, trim)
@@ -51,13 +52,18 @@ function snapAndTrimNormalsToCapitals() {
   for (const w of state.walls) {
     if (w.kind !== 'normal') continue
 
-    const A = snapAndTrimEndpoint(w.a, w.b, caps)
-    const B = snapAndTrimEndpoint(w.b, w.a, caps)
+    // ✅ важно: считаем оба конца от исходных точек,
+    // чтобы второй конец не “переехал” из-за уже изменённого первого
+    const a0 = { ...w.a }
+    const b0 = { ...w.b }
+
+    const A = snapAndTrimEndpoint(a0, b0, caps)
+    const B = snapAndTrimEndpoint(b0, a0, caps)
 
     w.a = A.vis
     w.b = B.vis
 
-    // ✅ строительная геометрия для метрик/размеров
+    // ✅ строительная геометрия (для метрик/размеров)
     w.va = A.build
     w.vb = B.build
   }
@@ -91,7 +97,7 @@ export function loadStudioTemplate() {
     W(notchX, y1, x0, y1, 'capital'),
     W(x0, y1, x0, y0, 'capital'),
 
-    // --- normals ---
+    // --- normals (шаблонные межкомнатные) ---
     W(bedLeft, bedTop, bedLeft, bedBottom, 'normal'),
     W(bedLeft, bedBottom, x1, bedBottom, 'normal'),
 
@@ -99,7 +105,7 @@ export function loadStudioTemplate() {
     W(bathLeft, bathTop, bathLeft, y1, 'normal'),
   ]
 
-  // подрезаем нормалы к капитальным
+  // ✅ подрезаем нормалы к капитальным
   snapAndTrimNormalsToCapitals()
 
   state.draft = null

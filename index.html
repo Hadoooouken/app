@@ -17,7 +17,7 @@
 
     <button id="btn-wall" class="tool" type="button">
       <span class="tool__icon">🧱</span>
-      <span class="tool__label">Wall</span>
+      <span class="tool__label">Создать стену</span>
     </button>
     <button id="btn-trash" type="button" class="tool">🗑 Удалить стену</button>
 
@@ -29,32 +29,22 @@
     </div>
   </aside>
 
-  <!-- RIGHT ZOOM -->
-  <!-- RIGHT HUD -->
+
   <div class="hud">
-    <!-- сначала ZOOM -->
-<div class="zoom">
-  <button class="zoom__btn" id="undo" type="button" title="Undo (Ctrl/⌘+Z)" aria-label="Undo">
-    <img class="zoom__icon" src="./images/icons/undo.svg" alt="" aria-hidden="true">
-  </button>
+    <div class="zoom">
+      <button class="zoom__btn" id="undo" type="button" title="Undo (Ctrl/⌘+Z)" aria-label="Undo">
+        <img class="zoom__icon" src="./images/icons/undo.svg" alt="" aria-hidden="true">
+      </button>
 
-  <button class="zoom__btn" id="redo" type="button" title="Redo (Ctrl/⌘+Y or Ctrl/⌘+Shift+Z)" aria-label="Redo">
-    <img class="zoom__icon" src="./images/icons/redo.svg" alt="" aria-hidden="true">
-  </button>
+      <button class="zoom__btn" id="redo" type="button" title="Redo (Ctrl/⌘+Y or Ctrl/⌘+Shift+Z)" aria-label="Redo">
+        <img class="zoom__icon" src="./images/icons/redo.svg" alt="" aria-hidden="true">
+      </button>
 
-  <div class="zoom__sep" aria-hidden="true"></div>
-
-  <button class="zoom__btn" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">＋</button>
-  <button class="zoom__btn" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
-</div>
-
-
+ 
 
       <button class="zoom__btn" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">＋</button>
       <button class="zoom__btn" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
     </div>
-
-    <!-- потом DPAD -->
     <div class="dpad" id="dpad">
       <button class="dpad__btn dpad__btn--up" data-pan="up" type="button" aria-label="Up">↑</button>
       <button class="dpad__btn dpad__btn--left" data-pan="left" type="button" aria-label="Left">←</button>
