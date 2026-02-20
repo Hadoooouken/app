@@ -66,30 +66,33 @@ function scheduleRerender() {
 }
 
 function getFitPaddingPx() {
-    // размеры видимой области SVG
-    const rect = draw.node.getBoundingClientRect()
+  const rect = draw.node.getBoundingClientRect()
+  const css = getComputedStyle(document.documentElement)
 
-    // читаем проценты из CSS-переменных
-    const css = getComputedStyle(document.documentElement)
-    const padInlinePct = parseFloat(css.getPropertyValue('--planner-pad-inline')) || 10
-    const padBlockPct = parseFloat(css.getPropertyValue('--planner-pad-block')) || 10
+  const padInlinePct = parseFloat(css.getPropertyValue('--planner-pad-inline')) || 10
+  const padBlockPct  = parseFloat(css.getPropertyValue('--planner-pad-block')) || 10
 
-    // переводим в px
-    const pxX = (rect.width * padInlinePct) / 100
-    const pxY = (rect.height * padBlockPct) / 100
+  const padMin = parseFloat(css.getPropertyValue('--planner-pad-min')) || 24
+  const padMax = parseFloat(css.getPropertyValue('--planner-pad-max')) || 320
 
-    // fitToWalls у тебя принимает один padding, поэтому берём “безопасный”
-    // (чтобы и по X, и по Y точно влезло)
-    let padding = Math.min(pxX, pxY)
+  const mult = parseFloat(css.getPropertyValue('--planner-fit-mult')) || 1
 
-    // небольшой clamp, чтобы на очень узких/очень широких не было странно
-    padding = Math.max(24, Math.min(320, padding))
+  const pxX = (rect.width  * padInlinePct) / 100
+  const pxY = (rect.height * padBlockPct) / 100
 
-    return padding
+  let padding = Math.min(pxX, pxY) * mult
+  padding = Math.max(padMin, Math.min(padMax, padding))
+
+  return padding
+}
+
+function getPlannerMaxScale() {
+  const css = getComputedStyle(document.documentElement)
+  return parseFloat(css.getPropertyValue('--planner-max-scale')) || 1.1
 }
 
 function fitPlannerToWalls() {
-    fitToWalls(draw, { padding: getFitPaddingPx(), maxScale: 1.1 })
+  fitToWalls(draw, { padding: getFitPaddingPx(), maxScale: getPlannerMaxScale() })
 }
 
 
