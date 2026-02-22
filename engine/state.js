@@ -7,6 +7,7 @@ export const state = {
   // geometry
   walls: [],
   doors: [],
+  windows: [], 
 
   // selection / hover
   selectedWallId: null,
@@ -91,7 +92,7 @@ export function loadOneRoomTemplate() {
       kind: 'entry',
       wallId: capBottom, // ✅ привязка к капитальной
       t: 0.2,
-      w: 90,             // обычно входная шире
+      w: 90,             
       thick: CAP_W,      // как капитальная, чтобы красиво
       locked: true,      // UI/interaction игнорит locked
     },

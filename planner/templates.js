@@ -69,6 +69,17 @@ function snapAndTrimNormalsToCapitals() {
   }
 }
 
+// ✅ Окна для стартового шаблона.
+// wallId — id капитальной стены
+// t — положение по стене (0..1)
+// kind: 'std' | 'balcony'
+export const studioWindows = [
+  // Верхняя стена (capTop = w1)
+  { wallId: 'w1', t: 0.4, kind: 'std' },
+  { wallId: 'w1', t: 0.80, kind: 'std' },
+  // Пример на правой стене (если нужно оставить)
+  { wallId: 'w6', t: 0.75, kind: 'balcony' },
+]
 // простая дверь-id (не обязательно, но удобно)
 function did() {
   return `d${Date.now()}_${Math.random().toString(16).slice(2)}`
@@ -135,6 +146,8 @@ export function loadStudioTemplate() {
     // пример межкомнатной (двигается)
 
   ]
+
+
 
   // сброс интерактива
   state.draft = null

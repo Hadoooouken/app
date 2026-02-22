@@ -46,7 +46,7 @@ export const config = {
     // -------------------------
     walls: {
         // Толщина капитальной стены при отрисовке (world units).
-        CAP_W: 28,
+        CAP_W: 40,
 
         // Толщина normal стены при отрисовке (world units).
         NOR_W: 10,
@@ -72,11 +72,26 @@ export const config = {
         defaultEntryW: 90,
 
         // Ограничение: одна межкомнатная дверь (interior) на одну стену.
-        oneInteriorPerWall: false,
+        oneInteriorPerWall: true,
 
         // Шаг сдвига двери стрелками (world units).
         // Обычно удобно = шагу магнита (grid.snapStep), но можно отдельно.
         nudgeStepWorld: 25,
+    },
+    windows: {
+        // стандартное окно 1.0м (world units, у тебя cm → 100)
+        defaultW: 100,
+
+        // балконное/остекление (пример: 180см)
+        balconyW: 180,
+
+        // визуальная "толщина" окна (если не задано в объекте окна)
+        // можно сделать чуть меньше толщины капитальной
+        thickMulOfCap: 0.65,
+
+        // небольшой вынос от оси капитальной наружу (в world units)
+        // чтобы читалось как проём на стене
+        outwardOffsetWorld: 2,
     },
 
     // -------------------------
@@ -251,6 +266,13 @@ export const config = {
 
             // Цвет preview двери в режиме draw-door
             preview: 'rgba(196,154,108,0.75)',
+        },
+
+        window: {
+            // цвет проёма/стекла
+            fill: 'rgba(160, 210, 255, 0.85)',
+            // обводка
+            stroke: 'rgba(40, 90, 140, 0.9)',
         },
 
         // Цвет линий сетки

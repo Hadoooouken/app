@@ -5,7 +5,7 @@ import { historyCommit, historyBegin, historyEnd, undo, redo } from '../engine/h
 
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
-import { loadStudioTemplate } from './templates.js'
+import { loadStudioTemplate, studioWindows } from './templates.js'
 import { initViewport } from '../interaction/viewport.js'
 import { initPointer } from '../interaction/pointer.js'
 import { pickNormalWallAt, pickWallHandleAt } from '../engine/pick.js'
@@ -64,6 +64,45 @@ function panBy(dx, dy) {
   state.view.offsetX += dx
   state.view.offsetY += dy
   rerender()
+}
+
+function clampTToSegment(t, segLen, wWorld) {
+  const half = wWorld / 2
+  const marginT = Math.min(0.49, half / Math.max(1e-6, segLen))
+  return Math.max(marginT, Math.min(1 - marginT, t))
+}
+
+function initWindowsFromTemplate() {
+  const walls = state.walls || []
+  const byId = new Map(walls.filter(w => w?.id).map(w => [w.id, w]))
+
+  state.windows = []
+
+  for (const wdef of (studioWindows || [])) {
+    const wall = byId.get(wdef.wallId)
+    if (!wall) continue
+    if (wall.kind !== 'capital') continue // ✅ только на капитальных
+
+    const wWorld =
+      wdef.kind === 'balcony'
+        ? (config.windows.balconyW ?? 180)
+        : (config.windows.defaultW ?? 100)
+
+    const dx = wall.b.x - wall.a.x
+    const dy = wall.b.y - wall.a.y
+    const len = Math.hypot(dx, dy) || 1
+
+    const t = clampTToSegment(wdef.t ?? 0.5, len, wWorld)
+
+    state.windows.push({
+      id: `win_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      kind: wdef.kind || 'std',
+      wallId: wdef.wallId,
+      t,
+      w: wWorld,
+      // thick можно не задавать — в render возьмём из config.windows.thickMulOfCap
+    })
+  }
 }
 
 function initDPad() {
@@ -489,7 +528,7 @@ function clampDoorTToWallParams(t, doorW, wall) {
 function updateDoorPreviewAtPoint(p) {
   // курсор по умолчанию, дальше можем переключить на crosshair
   setPlannerCursor('default')
-  
+
 
   const wallId = pickNormalWallAt(p, { tolPx: PICK_DOOR_PX })
   if (!wallId) {
@@ -523,12 +562,12 @@ function updateDoorPreviewAtPoint(p) {
 
   // ✅ сюда дошли значит можно ставить дверь → курсор crosshair
   setPlannerCursor('pointer')
-const doorW = DOOR_W_INTERIOR
+  const doorW = DOOR_W_INTERIOR
 
-let t = projectPointToWallT(p, w.a, w.b)
-t = clampDoorTToWallParams(t, doorW, w)
+  let t = projectPointToWallT(p, w.a, w.b)
+  t = clampDoorTToWallParams(t, doorW, w)
 
-const next = { wallId, t, w: doorW, thick: NOR_W }
+  const next = { wallId, t, w: doorW, thick: NOR_W }
   const prev = state.previewDoor
   const changed =
     !prev ||
@@ -596,7 +635,7 @@ function nudgeSelectedDoorByArrow(key) {
   const dy = w.b.y - w.a.y
   const horizontal = Math.abs(dx) >= Math.abs(dy)
 
-const STEP_WORLD = DOOR_NUDGE_WORLD
+  const STEP_WORLD = DOOR_NUDGE_WORLD
   const len = Math.hypot(dx, dy) || 1
   const dt = STEP_WORLD / len
 
@@ -834,7 +873,7 @@ draw.node.addEventListener('pointerdown', (e) => {
   }
 
   // 2) wall body
- const id = pickNormalWallAt(p, { tolPx: PICK_WALL_PX })
+  const id = pickNormalWallAt(p, { tolPx: PICK_WALL_PX })
   if (id) {
     state.selectedWallId = id
     state.selectedDoorId = null
@@ -927,7 +966,7 @@ draw.node.addEventListener('pointercancel', () => {
 // -------- start --------
 syncUI()
 loadStudioTemplate()
-
+initWindowsFromTemplate()
 requestAnimationFrame(() => {
   fitPlannerToWalls()
   rerender()

@@ -210,6 +210,66 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
+    // ---- WINDOWS (only init, only capital) ----
+  const windows = state.windows || []
+  if (windows.length) {
+    const capCentroid = getCapitalsCentroid(walls) // уже есть у тебя ниже, можно оставить локально тут
+    for (const win of windows) {
+      const wall = caps.find(x => x.id === win.wallId)
+      if (!wall) continue
+
+      const a = wall.a
+      const b = wall.b
+
+      const t = Math.max(0, Math.min(1, win.t ?? 0.5))
+      const winW = win.w ?? config.windows.defaultW ?? 100
+
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len = Math.hypot(dx, dy) || 1
+      const ux = dx / len
+      const uy = dy / len
+
+      const cx = a.x + (b.x - a.x) * t
+      const cy = a.y + (b.y - a.y) * t
+
+      const half = winW / 2
+      const p1 = { x: cx - ux * half, y: cy - uy * half }
+      const p2 = { x: cx + ux * half, y: cy + uy * half }
+
+      // наружная нормаль (чтобы слегка вынести проём наружу)
+      const { nx, ny } = outwardNormal(a, b, capCentroid)
+      const out = (config.windows.outwardOffsetWorld ?? 2) * invScale
+
+      const q1 = { x: p1.x + nx * out, y: p1.y + ny * out }
+      const q2 = { x: p2.x + nx * out, y: p2.y + ny * out }
+
+      const thick = (win.thick ?? (CAP_W * (config.windows.thickMulOfCap ?? 0.65)))
+
+      // "стекло"
+      overlayG
+        .line(q1.x, q1.y, q2.x, q2.y)
+        .stroke({
+          width: thick,
+          color: config.theme.window.fill,
+          linecap: 'butt',
+          linejoin: 'round',
+          opacity: 1,
+        })
+        .attr({ 'pointer-events': 'none' })
+
+      // обводка
+      overlayG
+        .line(q1.x, q1.y, q2.x, q2.y)
+        .stroke({
+          width: Math.max(1, 2 * invScale),
+          color: config.theme.window.stroke,
+          linecap: 'round',
+        })
+        .attr({ 'pointer-events': 'none' })
+    }
+  }
+
   // 2) NORMAL visible (hover/selected)
   for (const w of normals) {
     const isSelected = w.id && w.id === state.selectedWallId
