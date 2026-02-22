@@ -677,17 +677,23 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-  // ---- room labels ----
-  const rooms = computeRooms({ minAreaM2: config.rooms.minAreaM2 })
+// ---- room labels ----
+const rooms = computeRooms({ minAreaM2: config.rooms.minAreaM2 })
 
-  // не показываем "общую площадь коробки" — обычно это самая большая room
-  let roomsToDraw = rooms
-  if (rooms.length > 1) {
-    const maxArea = Math.max(...rooms.map(r => r.areaM2))
-    roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
-  }
+let roomsG = overlayG.findOne('#room-labels')
+if (!roomsG) roomsG = overlayG.group().id('room-labels')
+roomsG.clear()
+roomsG.attr({ 'pointer-events': 'none' })
 
-  let roomsG = overlayG.findOne('#room-labels')
+// ✅ НЕТ “комнат” — НЕ рисуем числа вообще
+// (коробка одна — это не комната для тебя)
+if (rooms.length <= 1) return
+
+// иначе убираем внешнюю грань (самую большую)
+const maxArea = Math.max(...rooms.map(r => r.areaM2))
+const roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
+
+// ... дальше твой код отрисовки roomsToDraw как сейчас
   if (!roomsG) roomsG = overlayG.group().id('room-labels')
   roomsG.clear()
   roomsG.attr({ 'pointer-events': 'none' })

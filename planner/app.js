@@ -472,15 +472,29 @@ function resetInteractionState() {
 
 function applyUndo() {
   resetInteractionState()
+
+  // ✅ сброс выделений/ховера/превью (после undo могли стать “битые” id)
   state.selectedWallId = null
   state.selectedDoorId = null
+  state.hoverWallId = null
+  state.hoverDoorId = null
+  state.previewDoor = null
+  state.previewWall = null
+
   if (undo()) rerender()
 }
 
 function applyRedo() {
   resetInteractionState()
+
+  // ✅ то же самое для redo
   state.selectedWallId = null
   state.selectedDoorId = null
+  state.hoverWallId = null
+  state.hoverDoorId = null
+  state.previewDoor = null
+  state.previewWall = null
+
   if (redo()) rerender()
 }
 
