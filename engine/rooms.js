@@ -1,33 +1,25 @@
 // engine/rooms.js
 import { state } from './state.js'
 import { config } from './config.js'
+import {
+    dist,
+    clamp,
+    projectPointToSegmentClamped,
+    pointInPoly,
+    pointOnSegment,
+} from './geom.js'
+import { getCapitalPolygon as getCapPoly } from './metrics.js'
+
 // ---------------- utils ----------------
-const EPS = 0.5 // world units (подстрой: 0.25..2)
 
-const keyOf = (p) => `${Math.round(p.x / EPS)}:${Math.round(p.y / EPS)}`
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+// ⚠️ это НЕ "численный EPS", это допуск склейки вершин/стыков в топологии.
+// Сделаем чуть больше, чтобы микрозазоры/почти-стыки не плодили мусорные грани.
+const NODE_EPS = Math.max(1.0, (config.grid?.snapStep ?? 25) * 0.08) // при 25см => 2см
 
-function samePoint(a, b, eps = EPS) {
+const keyOf = (p) => `${Math.round(p.x / NODE_EPS)}:${Math.round(p.y / NODE_EPS)}`
+
+function samePoint(a, b, eps = NODE_EPS) {
     return dist(a, b) <= eps
-}
-
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
-
-function projectPointToSegmentClamped(p, a, b) {
-    const abx = b.x - a.x, aby = b.y - a.y
-    const apx = p.x - a.x, apy = p.y - a.y
-    const ab2 = abx * abx + aby * aby
-    if (ab2 < 1e-9) return { point: { ...a }, t: 0, d: dist(p, a) }
-    let t = (apx * abx + apy * aby) / ab2
-    t = clamp(t, 0, 1)
-    const q = { x: a.x + abx * t, y: a.y + aby * t }
-    return { point: q, t, d: dist(p, q) }
-}
-
-// point on segment (inclusive)
-function pointOnSegment(p, a, b, eps = EPS) {
-    const pr = projectPointToSegmentClamped(p, a, b)
-    return pr.d <= eps && pr.t >= -1e-6 && pr.t <= 1 + 1e-6
 }
 
 function shoelaceArea(poly) {
@@ -62,22 +54,7 @@ function polygonCentroid(poly) {
     return { x: cx * k, y: cy * k }
 }
 
-function pointInPoly(p, poly) {
-    // ray casting
-    let inside = false
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const a = poly[i], b = poly[j]
-        const intersect =
-            ((a.y > p.y) !== (b.y > p.y)) &&
-            (p.x < (b.x - a.x) * (p.y - a.y) / ((b.y - a.y) || 1e-9) + a.x)
-        if (intersect) inside = !inside
-    }
-    return inside
-}
-
-// ---------------- polylabel (упрощенная, но рабочая) ----------------
-// Ищет точку внутри полигона, максимально удалённую от границы.
-// Это даёт “центр комнаты” визуально правильно.
+// bbox — нужен и для polylabel, и для fallback
 function getBBox(poly) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (const p of poly) {
@@ -89,9 +66,10 @@ function getBBox(poly) {
     return { minX, minY, maxX, maxY }
 }
 
+// ---------------- polylabel (упрощенная, но рабочая) ----------------
+// Ищет точку внутри полигона, максимально удалённую от границы.
 function pointToPolyDist(p, poly) {
-    // positive if inside, negative if outside
-    let inside = pointInPoly(p, poly)
+    const inside = pointInPoly(p, poly)
     let minDist = Infinity
 
     for (let i = 0; i < poly.length; i++) {
@@ -176,14 +154,11 @@ function collectRawSegments() {
 }
 
 // 2) нарезаем сегменты в точках “стыков”
-// важное: intersections у тебя запрещены, но end-to-segment стыки есть всегда
 function splitSegments(segs) {
-    // для каждого сегмента соберем точки-разрезы
     const splits = segs.map(() => [])
 
     for (let i = 0; i < segs.length; i++) {
         const si = segs[i]
-        // endpoints всегда
         splits[i].push(si.a, si.b)
     }
 
@@ -195,14 +170,11 @@ function splitSegments(segs) {
             const sj = segs[j]
 
             for (const p of [si.a, si.b]) {
-                if (pointOnSegment(p, sj.a, sj.b, EPS)) {
-                    // p лежит на sj -> это вершина разреза для sj
+                if (pointOnSegment(p, sj.a, sj.b, NODE_EPS)) {
                     splits[j].push({ ...p })
                 } else {
-                    // иногда у тебя конец near, но не идеально => подстрахуемся проекцией
                     const pr = projectPointToSegmentClamped(p, sj.a, sj.b)
-                    // только если попали "внутрь" сегмента и очень близко
-                    if (pr.t > 1e-4 && pr.t < 1 - 1e-4 && pr.d <= EPS) {
+                    if (pr.t > 1e-4 && pr.t < 1 - 1e-4 && pr.d <= NODE_EPS) {
                         splits[j].push({ ...pr.point })
                     }
                 }
@@ -210,10 +182,10 @@ function splitSegments(segs) {
         }
     }
 
-    // превращаем каждый сегмент в набор маленьких
     const out = []
     for (let i = 0; i < segs.length; i++) {
         const s = segs[i]
+
         // уникализация точек на сегменте
         const pts = []
         for (const p of splits[i]) {
@@ -238,7 +210,6 @@ function splitSegments(segs) {
 
 // 3) граф: вершины + ориентированные ребра
 function buildHalfEdges(segments) {
-    // nodeId by snapped key
     const nodes = new Map() // key -> {id, p, out: []}
     const getNode = (p) => {
         const k = keyOf(p)
@@ -276,11 +247,9 @@ function nextEdge(nodes, edge) {
     const out = v.out
     if (!out.length) return null
 
-    // найти ребро, которое идет обратно (to -> from)
     const backIndex = out.findIndex(e => e.to === edge.from)
     if (backIndex === -1) return null
 
-    // берем “предыдущее” в CCW списке => это поворот вправо
     const nextIndex = (backIndex - 1 + out.length) % out.length
     return out[nextIndex]
 }
@@ -299,25 +268,21 @@ function traceFace(nodes, startEdge) {
         e = ne
         if (e.from === startEdge.from && e.to === startEdge.to) break
 
-        // защита от зацикливания
         if (poly.length > 2000) return null
     }
     return poly
 }
 
 function dedupeFace(poly) {
-    // убираем подряд одинаковые точки
     const out = []
     for (const p of poly) {
         if (!out.length || !samePoint(out[out.length - 1], p)) out.push(p)
     }
-    // если замкнулось дублем в конце
     if (out.length >= 2 && samePoint(out[0], out[out.length - 1])) out.pop()
     return out
 }
 
 function uniqFaces(faces) {
-    // грубая уникализация по строке ключей
     const seen = new Set()
     const out = []
     for (const f of faces) {
@@ -334,6 +299,8 @@ function uniqFaces(faces) {
 export function computeRooms({
     minAreaM2 = config.rooms?.minAreaM2 ?? 0.5,
 } = {}) {
+    const capPoly = getCapPoly() // может быть null
+
     const segs0 = collectRawSegments()
     const segs = splitSegments(segs0)
     const { nodes, halfEdges } = buildHalfEdges(segs)
@@ -347,7 +314,7 @@ export function computeRooms({
         const poly = dedupeFace(poly0)
         if (poly.length < 3) continue
 
-        const areaW = shoelaceArea(poly) // world^2
+        const areaW = shoelaceArea(poly)
         if (!Number.isFinite(areaW) || Math.abs(areaW) < 1) continue
         faces.push(poly)
     }
@@ -375,10 +342,25 @@ export function computeRooms({
         const poly = uniq[i]
         const areaW = Math.abs(areas[i])
         const areaM2 = areaW / (UNITS_PER_M * UNITS_PER_M)
-
         if (areaM2 < minAreaM2) continue
 
-        const label = polylabel(poly, precision)
+        // --- label ---
+        let label = polylabel(poly, precision)
+
+        // ✅ защита: точка должна быть внутри
+        if (!pointInPoly(label, poly)) {
+            label = polygonCentroid(poly)
+            if (!pointInPoly(label, poly)) {
+                const bb = getBBox(poly)
+                label = { x: (bb.minX + bb.maxX) / 2, y: (bb.minY + bb.maxY) / 2 }
+            }
+        }
+
+        // ✅ защита: комната должна быть внутри капитального контура
+        if (capPoly && capPoly.length >= 3) {
+            if (!pointInPoly(label, capPoly)) continue
+        }
+
         rooms.push({ poly, areaM2, label })
     }
 

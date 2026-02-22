@@ -1,8 +1,12 @@
 // engine/constraints.js
 import { state } from './state.js'
 import { config, CLEAR_FROM_CAPITAL } from './config.js'
-
-const EPS = 1e-9
+import {
+  dist,
+  projectPointToSegment,
+  projectPointToSegmentClamped,
+  segmentIntersectionParams,
+} from './geom.js'
 
 // ---------------- SNAP ----------------
 
@@ -114,27 +118,7 @@ function collectSnapPoints() {
   return pts
 }
 
-function dist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y)
-}
-
 // ---------------- T SNAP TO NORMAL SEGMENTS ----------------
-
-// проекция точки p на отрезок a-b: {point, t, d}
-function projectPointToSegment(p, a, b) {
-  const abx = b.x - a.x, aby = b.y - a.y
-  const apx = p.x - a.x, apy = p.y - a.y
-  const ab2 = abx * abx + aby * aby
-  if (ab2 < EPS) {
-    const d = Math.hypot(p.x - a.x, p.y - a.y)
-    return { point: { ...a }, t: 0, d }
-  }
-  let t = (apx * abx + apy * aby) / ab2
-  t = Math.max(0, Math.min(1, t))
-  const q = { x: a.x + abx * t, y: a.y + aby * t }
-  const d = Math.hypot(p.x - q.x, p.y - q.y)
-  return { point: q, t, d }
-}
 
 // вернуть point если в радиусе и НЕ около концов, иначе null
 function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
@@ -148,7 +132,7 @@ function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
     const a = w.va || w.a
     const b = w.vb || w.b
 
-    const pr = projectPointToSegment(p, a, b)
+    const pr = projectPointToSegment(p, a, b) // {point,t,d}
     if (pr.d > tolWorld) continue
 
     // если почти у конца — это не T, а узел (пусть toPoints решает)
@@ -164,17 +148,6 @@ function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
 }
 
 // ---------------- SNAP TO CAPITAL SEGMENTS (projection) ----------------
-
-function projectPointToSegmentClamped(p, a, b) {
-  const abx = b.x - a.x, aby = b.y - a.y
-  const apx = p.x - a.x, apy = p.y - a.y
-  const ab2 = abx * abx + aby * aby
-  if (ab2 < EPS) return { point: { ...a }, t: 0 }
-
-  let t = (apx * abx + apy * aby) / ab2
-  t = Math.max(0, Math.min(1, t))
-  return { point: { x: a.x + abx * t, y: a.y + aby * t }, t }
-}
 
 function snapPointToCapitalSegments(p, tolWorld) {
   const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
@@ -398,53 +371,4 @@ function pointInPolyInclusive(p, poly, tolWorld) {
     if (intersect) inside = !inside
   }
   return inside
-}
-
-// ---------------- SEGMENT INTERSECTION HELPERS ----------------
-
-// null | {type:'point', t,u,p} | {type:'overlap', overlapLen}
-function segmentIntersectionParams(a, b, c, d) {
-  const r = { x: b.x - a.x, y: b.y - a.y }
-  const s = { x: d.x - c.x, y: d.y - c.y }
-  const denom = cross(r, s)
-
-  const ca = { x: c.x - a.x, y: c.y - a.y }
-
-  // параллельны
-  if (Math.abs(denom) < 1e-12) {
-    // не коллинеарны
-    if (Math.abs(cross(ca, r)) > 1e-9) return null
-
-    const rr = r.x * r.x + r.y * r.y
-    if (rr < EPS) return null
-
-    const t0 = dot(c.x - a.x, c.y - a.y, r.x, r.y) / rr
-    const t1 = dot(d.x - a.x, d.y - a.y, r.x, r.y) / rr
-    const lo = Math.max(0, Math.min(t0, t1))
-    const hi = Math.min(1, Math.max(t0, t1))
-
-    if (hi < lo) return null
-
-    const overlapLen = Math.hypot(r.x, r.y) * (hi - lo)
-    if (overlapLen < 1e-9) return null
-
-    return { type: 'overlap', overlapLen }
-  }
-
-  const t = cross(ca, s) / denom
-  const u = cross(ca, r) / denom
-
-  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-    const p = { x: a.x + t * r.x, y: a.y + t * r.y }
-    return { type: 'point', t, u, p }
-  }
-
-  return null
-}
-
-function cross(v, w) {
-  return v.x * w.y - v.y * w.x
-}
-function dot(ax, ay, bx, by) {
-  return ax * bx + ay * by
 }

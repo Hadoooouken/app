@@ -158,3 +158,26 @@ export function segmentIntersectionPoint(a, b, c, d) {
     const hit = segmentIntersectionParams(a, b, c, d)
     return hit && hit.type === 'point' ? hit.p : null
 }
+
+// Алиас для удобства (в других модулях может называться без "Clamped")
+// Возвращает { point, t, d }
+export function projectPointToSegment(p, a, b) {
+    return projectPointToSegmentClamped(p, a, b)
+}
+
+// engine/geom.js additions
+
+export function clamp(v, a, b) {
+    return Math.max(a, Math.min(b, v))
+}
+
+// обычный ray casting (без "inclusive")
+export function pointInPoly(p, poly) {
+    return isPointInPolygon(p, poly)
+}
+
+// точка на отрезке (inclusive) через проекцию
+export function pointOnSegment(p, a, b, tol = 0.5) {
+    const pr = projectPointToSegmentClamped(p, a, b)
+    return pr.d <= tol && pr.t >= -1e-6 && pr.t <= 1 + 1e-6
+}
