@@ -1,6 +1,6 @@
 // engine/rooms.js
-import { state, UNITS_PER_M } from './state.js'
-
+import { state } from './state.js'
+import { config } from './config.js'
 // ---------------- utils ----------------
 const EPS = 0.5 // world units (подстрой: 0.25..2)
 
@@ -331,7 +331,9 @@ function uniqFaces(faces) {
 
 // ---------------- public API ----------------
 
-export function computeRooms({ minAreaM2 = 0.5 } = {}) {
+export function computeRooms({
+    minAreaM2 = config.rooms?.minAreaM2 ?? 0.5,
+} = {}) {
     const segs0 = collectRawSegments()
     const segs = splitSegments(segs0)
     const { nodes, halfEdges } = buildHalfEdges(segs)
@@ -363,6 +365,9 @@ export function computeRooms({ minAreaM2 = 0.5 } = {}) {
         return a
     })
 
+    const UNITS_PER_M = config.units.UNITS_PER_M
+    const precision = config.rooms?.polylabelPrecisionWorld ?? 2.0
+
     const rooms = []
     for (let i = 0; i < uniq.length; i++) {
         if (i === maxIdx) continue // внешняя
@@ -373,7 +378,7 @@ export function computeRooms({ minAreaM2 = 0.5 } = {}) {
 
         if (areaM2 < minAreaM2) continue
 
-        const label = polylabel(poly, 2.0) // точность в world units
+        const label = polylabel(poly, precision)
         rooms.push({ poly, areaM2, label })
     }
 

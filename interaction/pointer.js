@@ -1,14 +1,9 @@
 // interaction/pointer.js
 import { historyCommit } from '../engine/history.js'
 
-import {
-  state,
-  GRID_STEP_SNAP,
-  CAP_W,
-  NOR_W,
-  OVERLAP,
-  CLEAR_FROM_CAPITAL,
-} from '../engine/state.js'
+import { state } from '../engine/state.js'
+import { config, CLEAR_FROM_CAPITAL } from '../engine/config.js'
+
 import { render } from '../renderer/render.js'
 import { screenToWorld } from '../renderer/svg.js'
 import {
@@ -25,7 +20,8 @@ const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
 const TAP_THRESH_PX = 10
 const CANCEL_A_PX = 14
 const DRAG_START_PX = 10 // порог чтобы считать drag на таче
-const MIN_WALL_LEN = 50  // ✅ 50 см (world units = cm)
+
+const MIN_WALL_LEN = config.walls.MIN_LEN // ✅ из конфига
 
 const clearPulse = () => {
   if (state.ui) state.ui.snapPulse = null
@@ -39,10 +35,7 @@ const isCoarse = () => {
 const isTouchLikePointer = (pointerType) => pointerType !== 'mouse' || isCoarse()
 
 // ✅ ДЛЯ РИСОВАНИЯ делаем “clear” заметно меньше, чем для select
-const DRAW_CLEAR = Math.max(
-  0,
-  (Number.isFinite(CLEAR_FROM_CAPITAL) ? CLEAR_FROM_CAPITAL : 0) * 0.1
-)
+const DRAW_CLEAR = Math.max(0, CLEAR_FROM_CAPITAL() * 0.1)
 
 // ---------------- trim to capitals ----------------
 function nearestPointOnSeg(p, a, b) {
@@ -66,6 +59,10 @@ function trimWallToCapitals(wall) {
   const caps = (state.walls || []).filter(w => w.kind === 'capital')
   if (!caps.length) return wall
 
+  const CAP_W = config.walls.CAP_W
+  const NOR_W = config.walls.NOR_W
+  const OVERLAP = config.walls.OVERLAP
+
   // ✅ сохраняем исходные точки (важно для L-стыков)
   const a0 = { ...wall.a }
   const b0 = { ...wall.b }
@@ -75,7 +72,7 @@ function trimWallToCapitals(wall) {
   wall.vb = { ...b0 }
 
   const scale = Math.max(1e-6, state.view.scale)
-  const tolWorld = 22 / scale
+  const tolWorld = config.snap.draw.snapPx / scale
   const trimLenVisual = CAP_W / 2 + NOR_W / 2 - OVERLAP
 
   const snapEnd = (end, other) => {
@@ -188,15 +185,15 @@ export function initPointer(draw, { newWallId } = {}) {
 
   function snapAt(raw, fromPoint) {
     return smartSnapPoint(raw, fromPoint, {
-      grid: GRID_STEP_SNAP,
-      snapPx: 22,
-      axisPx: 14,
+      grid: config.grid.snapStep,
+      snapPx: config.snap.draw.snapPx,
+      axisPx: config.snap.draw.axisPx,
       toGrid: true,
       toPoints: true,
       toAxis: true,
       toCapital: true,
       toNormals: true,
-      tGuard: 0.08,
+      tGuard: config.snap.tGuard,
     })
   }
 
@@ -407,7 +404,7 @@ export function initPointer(draw, { newWallId } = {}) {
     // ✅ min length
     const len = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
     if (len < MIN_WALL_LEN) {
-      cancelInvalidB(p, e.pointerType) // можно cancelStart(), если хочешь просто отменять без "ошибки"
+      cancelInvalidB(p, e.pointerType)
       return
     }
 

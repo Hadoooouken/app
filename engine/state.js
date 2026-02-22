@@ -1,22 +1,22 @@
 // engine/state.js
+import { config } from './config.js'
 
 export const state = {
   mode: 'select',
 
-  // геометрия
+  // geometry
   walls: [],
   doors: [],
 
   // selection / hover
   selectedWallId: null,
   hoverWallId: null,
-
   selectedDoorId: null,
-  hoverDoorId: null, // ✅ для hover дверей (если подключишь в app.js/render.js)
+  hoverDoorId: null,
 
   // previews
   previewWall: null,
-  previewDoor: null, // ✅ { wallId, t, w, thick }
+  previewDoor: null, // { wallId, t, w, thick }
 
   // viewport
   view: { scale: 1, offsetX: 0, offsetY: 0 },
@@ -27,22 +27,8 @@ export const state = {
   snapPoint: null,
 }
 
-// ---- Units / grid ----
-export const UNIT = 'cm'
-export const UNITS_PER_M = 100      // 100 cm = 1 m (world units = cm)
-export const GRID_STEP_VIEW = 100   // визуальная сетка (1 м)
-export const GRID_STEP_SNAP = 25    // магнит (25 см)
-
-// ---- Wall thickness in WORLD units ----
-export const CAP_W = 28
-export const NOR_W = 10
-export const OVERLAP = 5
-
-// насколько normal должен держаться “внутри” от оси капитальной,
-// чтобы визуально не залезать в её толщину
-export const CLEAR_FROM_CAPITAL = (CAP_W / 2) + (NOR_W / 2) - OVERLAP
-
-function wid() {
+// ---------------- helpers ----------------
+export function wid() {
   // crypto.randomUUID() есть в современных браузерах
   return (globalThis.crypto?.randomUUID)
     ? globalThis.crypto.randomUUID()
@@ -63,6 +49,9 @@ export function loadOneRoomTemplate() {
   const y0 = -H / 2
   const x1 = W / 2
   const y1 = H / 2
+
+  const CAP_W = config.walls.CAP_W
+  const NOR_W = config.walls.NOR_W
 
   // заранее создаём id стен, чтобы на них можно было ссылаться дверями
   const capTop = wid()
@@ -108,17 +97,17 @@ export function loadOneRoomTemplate() {
     },
   ]
 
-  // сброс селектов/ховеров
+  // reset selections/hovers
   state.selectedWallId = null
   state.hoverWallId = null
   state.selectedDoorId = null
   state.hoverDoorId = null
 
-  // сброс превью
+  // reset previews
   state.previewWall = null
   state.previewDoor = null
 
-  // сброс режима/редактора
+  // reset mode/editor/ui
   state.mode = 'select'
   state.edit = null
   state.ui = { dragged: false, lockPan: false, snapPulse: null }

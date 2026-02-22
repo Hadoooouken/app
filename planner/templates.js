@@ -1,5 +1,7 @@
 // planner/templates.js
-import { state, CAP_W, NOR_W, OVERLAP } from '../engine/state.js'
+import { state } from '../engine/state.js'
+import { config } from '../engine/config.js'
+import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 import { projectPointToSegmentClamped } from '../engine/geom.js'
 
 let id = 1
@@ -12,6 +14,11 @@ const W = (ax, ay, bx, by, kind = 'capital') => ({
 
 // --- НАСТРОЙКИ “геометрии стыка” ---
 const SNAP_DIST = 40 // world units
+
+// алиасы толщин из конфига
+const CAP_W = config.walls.CAP_W
+const NOR_W = config.walls.NOR_W
+const OVERLAP = config.walls.OVERLAP
 
 function trimPointBack(from, to, trimLen) {
   const dx = to.x - from.x
@@ -42,11 +49,11 @@ function snapAndTrimEndpoint(endpoint, otherEnd, capitals) {
 }
 
 function snapAndTrimNormalsToCapitals() {
-  const caps = state.walls.filter(w => w.kind === 'capital')
+  const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
   if (!caps.length) return
 
-  for (const w of state.walls) {
-    if (w.kind !== 'normal') continue
+  for (const w of (state.walls || [])) {
+    if (!w || w.kind !== 'normal') continue
 
     const a0 = { ...w.a }
     const b0 = { ...w.b }
@@ -94,11 +101,6 @@ export function loadStudioTemplate() {
   const capBottom = W(notchX, y1, x0, y1, 'capital')
   const capLeft = W(x0, y1, x0, y0, 'capital')
 
-  const nBed1 = W(bedLeft, bedTop, bedLeft, bedBottom, 'normal')
-  const nBed2 = W(bedLeft, bedBottom, x1, bedBottom, 'normal')
-
-  const nBath1 = W(bathLeft, bathTop, bathRight, bathTop, 'normal')
-  const nBath2 = W(bathLeft, bathTop, bathLeft, y1, 'normal')
 
   state.walls = [
     capTop,
@@ -108,14 +110,14 @@ export function loadStudioTemplate() {
     capBottom,
     capLeft,
 
-    nBed1,
-    nBed2,
-    nBath1,
-    nBath2,
+
   ]
 
   // ✅ подрезаем нормалы к капитальным
   snapAndTrimNormalsToCapitals()
+
+  // ✅ гарантируем ia/ib для capital (и УБИРАЕМ это из render)
+  ensureCapitalInnerFaces()
 
   // --- двери ---
   // входная дверь (locked)
@@ -131,14 +133,7 @@ export function loadStudioTemplate() {
     },
 
     // пример межкомнатной (двигается)
-    {
-      id: did(),
-      kind: 'interior',
-      wallId: nBed2.id, // ✅ на normal
-      t: 0.5,
-      w: 75,
-      thick: NOR_W,
-    },
+
   ]
 
   // сброс интерактива
@@ -146,4 +141,7 @@ export function loadStudioTemplate() {
   state.selectedWallId = null
   state.hoverWallId = null
   state.selectedDoorId = null
+  state.hoverDoorId = null
+  state.previewWall = null
+  state.previewDoor = null
 }

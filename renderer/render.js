@@ -1,39 +1,20 @@
 // renderer/render.js
-import { state, UNITS_PER_M, GRID_STEP_VIEW } from '../engine/state.js'
+import { state } from '../engine/state.js'
+import { config } from '../engine/config.js'
 import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 import { computeRooms } from '../engine/rooms.js'
 import { fmtM2 } from '../engine/metrics.js'
 
-const DOOR_ENTRY_COLOR = '#4b2f23'     // тёмно-коричневый
-const DOOR_INTERIOR_COLOR = '#c8a07a'  // светло-коричневый
-const DOOR_SELECTED_COLOR = '#0a84ff'   // как select стен
-const DOOR_PREVIEW_COLOR = 'rgba(196,154,108,0.75)'
-
-
-const CAP_W = 28
-const NOR_W = 10
-
-const CAP_COLOR = '#111'
-const NOR_COLOR = '#343938'
-const SELECT_COLOR = '#0a84ff'
-
-
-
-// cursor colors
-const CURSOR_IDLE = '#111'
-const CURSOR_INVALID = '#ff3b30'
-
-// dimensions
-const DIM_COLOR = '#111'
-const DIM_BG = '#ffffff'
-const DIM_BG_OPACITY = 0.75
+// aliases from config (НЕ хардкод)
+const CAP_W = config.walls.CAP_W
+const NOR_W = config.walls.NOR_W
 
 // --- helpers ---
 function keyOf(p) {
   return `${Math.round(p.x * 1000)}:${Math.round(p.y * 1000)}`
 }
 function unitsToMeters(u) {
-  return u / UNITS_PER_M
+  return u / config.units.UNITS_PER_M
 }
 function formatMeters(m) {
   return `${m.toFixed(2)} м`
@@ -166,14 +147,14 @@ function ensureScene(draw) {
   const overlayG = scene.group().id('overlay')
 
   // GRID via pattern
-  const step = GRID_STEP_VIEW
+  const step = config.grid.viewStep
   const pattern = draw.pattern(step, step, (add) => {
-    add.line(0, 0, step, 0).stroke({ width: 1, color: '#e3dfd7' })
-    add.line(0, 0, 0, step).stroke({ width: 1, color: '#e3dfd7' })
+    add.line(0, 0, step, 0).stroke({ width: 1, color: config.theme.grid.line })
+    add.line(0, 0, 0, step).stroke({ width: 1, color: config.theme.grid.line })
   })
 
   // huge rect covered by pattern
-  const WORLD = 24000
+  const WORLD = config.render.worldSize
   const gridRect = gridG
     .rect(WORLD, WORLD)
     .move(-WORLD / 2, -WORLD / 2)
@@ -185,6 +166,8 @@ function ensureScene(draw) {
 }
 
 export function render(draw) {
+  // ⚠️ лучше вызывать это при изменении капиталок/шаблона, а не каждый render,
+  // но оставляю как у тебя пока.
   ensureCapitalInnerFaces()
 
   const { scene, wallsG, dimsG, overlayG } = ensureScene(draw)
@@ -197,6 +180,13 @@ export function render(draw) {
   })
 
   const invScale = 1 / Math.max(1e-6, state.view.scale)
+
+  // --- HIT widths in WORLD units but stable in PX ---
+  const HIT_WALL_PX = config.snap.pick.wallPx ?? 16
+  const HIT_DOOR_PX = config.snap.pick.doorPx ?? 18
+
+  const hitWallW = HIT_WALL_PX * invScale
+  const hitDoorW = HIT_DOOR_PX * invScale
 
   // ✅ clear only dynamic layers
   wallsG.clear()
@@ -213,7 +203,7 @@ export function render(draw) {
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
         width: CAP_W,
-        color: CAP_COLOR,
+        color: config.theme.wall.capital,
         linecap: 'round',
         linejoin: 'round',
       })
@@ -225,19 +215,19 @@ export function render(draw) {
     const isSelected = w.id && w.id === state.selectedWallId
     const isHovered = !isSelected && w.id && w.id === state.hoverWallId
 
-    let stroke = NOR_COLOR
+    let stroke = config.theme.wall.normal
     let strokeWidth = NOR_W
     let opacity = 1
 
     if (isHovered) {
-      stroke = SELECT_COLOR
-      strokeWidth = NOR_W + 2
-      opacity = 0.95
+      stroke = config.theme.wall.hover
+      strokeWidth = NOR_W + (config.theme.wall.hoverExtraW ?? 2)
+      opacity = config.theme.wall.hoverOpacity ?? 0.95
     }
     if (isSelected) {
-      stroke = SELECT_COLOR
-      strokeWidth = NOR_W + 4
-      opacity = 1
+      stroke = config.theme.wall.selected
+      strokeWidth = NOR_W + (config.theme.wall.selectedExtraW ?? 4)
+      opacity = config.theme.wall.selectedOpacity ?? 1
     }
 
     wallsG
@@ -252,14 +242,14 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-  // HIT lines (separate pass)
+  // HIT lines (separate pass) — stable click area in px
   for (const w of normals) {
     if (!w.id) continue
 
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
-        width: Math.max(22, NOR_W + 16),
+        width: hitWallW,
         color: '#000',
         opacity: 0,
         linecap: 'round',
@@ -292,81 +282,41 @@ export function render(draw) {
       wallsG
         .rect(nodeSize, nodeSize)
         .center(p.x, p.y)
-        .fill(NOR_COLOR)
+        .fill(config.theme.wall.normal)
         .radius(2)
         .attr({ 'pointer-events': 'none' })
     }
   }
 
+  // ---- DOORS (after walls) ----
+  const doors = state.doors || []
 
+  for (const d of doors) {
+    const isDoorSelected = d.id && d.id === state.selectedDoorId
+    const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
 
-// ---- DOORS (after walls) ----
-const doors = state.doors || []
+    let doorColor = (d.kind === 'entry')
+      ? config.theme.door.entry
+      : config.theme.door.interior
 
-for (const d of doors) {
-  const isDoorSelected = d.id && d.id === state.selectedDoorId
-  const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
+    if (isDoorHovered) doorColor = config.theme.door.hover
+    if (isDoorSelected) doorColor = config.theme.door.selected
 
-  let doorColor = (d.kind === 'entry') ? DOOR_ENTRY_COLOR : DOOR_INTERIOR_COLOR
-  if (isDoorHovered || isDoorSelected) doorColor = DOOR_SELECTED_COLOR
-  const w = walls.find(x => x.id === d.wallId)
-  if (!w) continue
+    const w = walls.find(x => x.id === d.wallId)
+    if (!w) continue
 
-  const a = w.a
-  const b = w.b
-
-  const t = Math.max(0, Math.min(1, d.t ?? 0.5))
-  const doorW = d.w ?? 75
-  const thick = d.thick ?? NOR_W
-
-  const cx = a.x + (b.x - a.x) * t
-  const cy = a.y + (b.y - a.y) * t
-
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const len = Math.hypot(dx, dy) || 1
-  const ux = dx / len
-  const uy = dy / len
-
-  const half = doorW / 2
-  const p1 = { x: cx - ux * half, y: cy - uy * half }
-  const p2 = { x: cx + ux * half, y: cy + uy * half }
-
-  // видимая “вставка” двери
-  overlayG
-    .line(p1.x, p1.y, p2.x, p2.y)
-    .stroke({
-      width: (isDoorSelected || isDoorHovered) ? (thick + 2) : thick,
-      color: doorColor,
-      linecap: 'butt',
-      linejoin: 'round',
-      opacity: 1,
-    })
-    .attr({ 'pointer-events': 'none' })
-
-  // кликабельность только для interior (entry вообще не кликается)
-  if (d.kind === 'interior' && !d.locked) {
-    overlayG
-      .line(p1.x, p1.y, p2.x, p2.y)
-      .stroke({ width: Math.max(22, thick + 16), color: '#000', opacity: 0 })
-      .attr({
-        'pointer-events': 'stroke',
-        'data-door-id': d.id,
-      })
-  }
-}
-
-// ---- PREVIEW DOOR ----
-if (state.mode === 'draw-door' && state.previewDoor) {
-  const pd = state.previewDoor
-  const w = walls.find(x => x.id === pd.wallId)
-  if (w) {
     const a = w.a
     const b = w.b
 
-    const t = Math.max(0, Math.min(1, pd.t ?? 0.5))
-    const doorW = pd.w ?? 75
-    const thick = pd.thick ?? NOR_W
+    const t = Math.max(0, Math.min(1, d.t ?? 0.5))
+    const defaultW =
+      (d.kind === 'entry')
+        ? config.doors.defaultEntryW
+        : config.doors.defaultInteriorW
+
+    const doorW = d.w ?? defaultW
+    const thick = d.thick ?? NOR_W
+
 
     const cx = a.x + (b.x - a.x) * t
     const cy = a.y + (b.y - a.y) * t
@@ -381,20 +331,70 @@ if (state.mode === 'draw-door' && state.previewDoor) {
     const p1 = { x: cx - ux * half, y: cy - uy * half }
     const p2 = { x: cx + ux * half, y: cy + uy * half }
 
+    // видимая “вставка” двери
     overlayG
       .line(p1.x, p1.y, p2.x, p2.y)
       .stroke({
-        width: thick,
-        color: DOOR_PREVIEW_COLOR,
-        opacity: 1,
-        dasharray: '10 8',
+        width: (isDoorSelected || isDoorHovered) ? (thick + 2) : thick,
+        color: doorColor,
         linecap: 'butt',
+        linejoin: 'round',
+        opacity: 1,
       })
       .attr({ 'pointer-events': 'none' })
-  }
-}
 
-// 4) selected highlight + handles
+    // кликабельность только для interior (entry вообще не кликается)
+    // кликабельность только для interior (entry вообще не кликается)
+    if (d.kind === 'interior' && !d.locked) {
+      overlayG
+        .line(p1.x, p1.y, p2.x, p2.y)
+        .stroke({ width: hitDoorW, color: '#000', opacity: 0 })
+        .attr({
+          'pointer-events': 'stroke',
+          'data-door-id': d.id,
+        })
+    }
+  }
+
+  // ---- PREVIEW DOOR ----
+  if (state.mode === 'draw-door' && state.previewDoor) {
+    const pd = state.previewDoor
+    const w = walls.find(x => x.id === pd.wallId)
+    if (w) {
+      const a = w.a
+      const b = w.b
+
+      const t = Math.max(0, Math.min(1, pd.t ?? 0.5))
+      const doorW = pd.w ?? config.doors.defaultInteriorW
+      const thick = pd.thick ?? NOR_W
+
+      const cx = a.x + (b.x - a.x) * t
+      const cy = a.y + (b.y - a.y) * t
+
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len = Math.hypot(dx, dy) || 1
+      const ux = dx / len
+      const uy = dy / len
+
+      const half = doorW / 2
+      const p1 = { x: cx - ux * half, y: cy - uy * half }
+      const p2 = { x: cx + ux * half, y: cy + uy * half }
+
+      overlayG
+        .line(p1.x, p1.y, p2.x, p2.y)
+        .stroke({
+          width: thick,
+          color: config.theme.door.preview,
+          opacity: 1,
+          dasharray: '10 8',
+          linecap: 'butt',
+        })
+        .attr({ 'pointer-events': 'none' })
+    }
+  }
+
+  // 4) selected highlight + handles
   if (state.selectedWallId) {
     const w = normals.find(x => x.id === state.selectedWallId)
     if (w) {
@@ -402,26 +402,26 @@ if (state.mode === 'draw-door' && state.previewDoor) {
         .line(w.a.x, w.a.y, w.b.x, w.b.y)
         .stroke({
           width: NOR_W + 6,
-          color: SELECT_COLOR,
+          color: config.theme.wall.selected,
           opacity: 0.35,
           linecap: 'butt',
           linejoin: 'round',
         })
         .attr({ 'pointer-events': 'none' })
 
-      const r = 12
+      const r = config.render.handles.r
       wallsG
         .circle(r * 2)
         .center(w.a.x, w.a.y)
         .fill('#fff')
-        .stroke({ width: 3, color: SELECT_COLOR })
+        .stroke({ width: 3, color: config.theme.wall.selected })
         .attr({ 'pointer-events': 'none' })
 
       wallsG
         .circle(r * 2)
         .center(w.b.x, w.b.y)
         .fill('#fff')
-        .stroke({ width: 3, color: SELECT_COLOR })
+        .stroke({ width: 3, color: config.theme.wall.selected })
         .attr({ 'pointer-events': 'none' })
     }
   }
@@ -433,23 +433,23 @@ if (state.mode === 'draw-door' && state.previewDoor) {
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
       const t0 = sp.t ?? now
       const dt = now - t0
-
-      if (dt < 350) {
-        const k = dt / 350
-        const r = (6 + 10 * k) * invScale
+      const PULSE_MS = config.render.snapPulseMs
+      if (dt < PULSE_MS) {
+        const k = dt / PULSE_MS
+        const r = (6 + 10 * k) * invScale // (если хочешь — тоже в config)
         const opacity = 0.55 * (1 - k)
 
         overlayG
           .circle(r * 2)
           .center(sp.x, sp.y)
           .fill({ color: '#000', opacity: 0 })
-          .stroke({ width: 2 * invScale, color: SELECT_COLOR, opacity })
+          .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity })
           .attr({ 'pointer-events': 'none' })
 
         overlayG
           .circle(3 * invScale * 2)
           .center(sp.x, sp.y)
-          .fill({ color: SELECT_COLOR, opacity: 0.9 })
+          .fill({ color: config.theme.wall.selected, opacity: 0.9 })
           .attr({ 'pointer-events': 'none' })
       }
     }
@@ -458,9 +458,9 @@ if (state.mode === 'draw-door' && state.previewDoor) {
   // ---------- DIMENSIONS ----------
   dimsG.attr({ 'pointer-events': 'none' })
 
-  const fontSize = 12 * invScale
-  const pad = 3 * invScale
-  // 1) length label for each wall
+  const dim = config.render?.dim || {}
+  const fontSize = (dim.fontPx ?? 12) * invScale
+  const pad = (dim.padPx ?? 3) * invScale
   const capCentroid = getCapitalsCentroid(walls)
 
   for (const w of walls) {
@@ -487,19 +487,23 @@ if (state.mode === 'draw-door' && state.previewDoor) {
 
     let nx, ny
     if (w.kind === 'capital') {
-      ({ nx, ny } = outwardNormal(posA, posB, capCentroid)) // ✅ наружу
+      ({ nx, ny } = outwardNormal(posA, posB, capCentroid)) // наружу
     } else {
       ({ nx, ny } = unitNormal(posA, posB))
     }
 
-    const offsetFromWall =
-      (w.kind === 'capital' ? (CAP_W / 2 + 14) : 14) * invScale
+    const offNormalPx = (dim.offsetNormalPx ?? 14) * invScale
+    const offCapExtraPx = (dim.offsetCapitalExtraPx ?? 14) * invScale
 
+    const offsetFromWall =
+      (w.kind === 'capital')
+        ? (CAP_W / 2) + offCapExtraPx
+        : offNormalPx
     const lx = mid.x + nx * offsetFromWall
     const ly = mid.y + ny * offsetFromWall
 
     const isSelected = w.id && w.id === state.selectedWallId
-    const fillText = isSelected ? SELECT_COLOR : DIM_COLOR
+    const fillText = isSelected ? config.theme.wall.selected : config.theme.dim.text
 
     const t = dimsG.text(txt)
     t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
@@ -508,7 +512,10 @@ if (state.mode === 'draw-door' && state.previewDoor) {
     const bb = t.bbox()
     const bg = dimsG
       .rect(bb.width + pad * 2, bb.height + pad * 2)
-      .fill({ color: DIM_BG, opacity: DIM_BG_OPACITY })
+      .fill({
+        color: config.theme.dim.bg,
+        opacity: (config.render?.dim?.bgOpacity ?? config.theme.dim.bgOpacity ?? 0.75),
+      })
       .radius(3 * invScale)
 
     const g = dimsG.group()
@@ -521,61 +528,59 @@ if (state.mode === 'draw-door' && state.previewDoor) {
     g.rotate(ang, lx, ly)
   }
 
-
-  // 2) "inside box" label
+  // 2) "inside box" label (Коробка: W × H м) — управляется из config.render.boxLabel
   {
-    const bb = getCapitalBBox(walls)
-    if (bb) {
-      const Wm = unitsToMeters(bb.maxX - bb.minX)
-      const Hm = unitsToMeters(bb.maxY - bb.minY)
+    const box = config.render?.boxLabel || { enabled: true }
 
-      const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
+    if (box.enabled) {
+      const bb = getCapitalBBox(walls)
+      if (bb) {
+        const Wm = unitsToMeters(bb.maxX - bb.minX)
+        const Hm = unitsToMeters(bb.maxY - bb.minY)
 
-      const fontSize2 = 13 * invScale
-      const pad2 = 4 * invScale
-      const rx = 6 * invScale
+        const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
 
-      const cx = (bb.minX + bb.maxX) / 2
-      const y = bb.minY - 70 * invScale
+        // ВАЖНО: эти значения в PX → делаем стабильными на зуме через invScale
+        const fontSize2 = (box.fontPx ?? 13) * invScale
+        const pad2 = (box.padPx ?? 4) * invScale
+        const rx = (box.radiusPx ?? 6) * invScale
+        const offsetY = (box.offsetPx ?? 70) * invScale
 
-      const g = dimsG.group()
+        const cx = (bb.minX + bb.maxX) / 2
+        const y = bb.minY - offsetY
 
-      const t = g.text(label)
-      t.font({
-        size: fontSize2,
-        family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
-        weight: 600,
-      })
-      t.fill('#111')
+        const g = dimsG.group()
 
-      const tb = t.bbox()
-      const bg = g
-        .rect(tb.width + pad2 * 2, tb.height + pad2 * 2)
-        .fill({ color: '#fff', opacity: 0.9 })
-        .radius(rx)
+        const t = g.text(label)
+        t.font({
+          size: fontSize2,
+          family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
+          weight: 600,
+        })
+        t.fill(config.theme.dim.text)
 
-      bg.center(cx, y)
-      t.center(cx, y)
-      bg.back()
+        const tb = t.bbox()
+        const bg = g
+          .rect(tb.width + pad2 * 2, tb.height + pad2 * 2)
+          .fill({
+            color: config.theme.dim.bg,
+            opacity: (box.bgOpacity ?? 0.9),
+          })
+          .radius(rx)
+
+        bg.center(cx, y)
+        t.center(cx, y)
+        bg.back()
+      }
     }
   }
 
-  // ---------- draft / preview ----------
-  if (state.draft) {
-    const { a, b } = state.draft
-    overlayG.line(a.x, a.y, b.x, b.y).stroke({
-      width: 6,
-      color: SELECT_COLOR,
-      dasharray: '10 8',
-      linecap: 'round',
-    })
-  }
-
+  // ---------- preview wall ----------
   if (state.previewWall) {
     const { a, b, ok } = state.previewWall
     overlayG.line(a.x, a.y, b.x, b.y).stroke({
-      width: 6,
-      color: ok ? SELECT_COLOR : CURSOR_INVALID,
+      width: config.render.preview.strokeW,
+      color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
       dasharray: '10 8',
       linecap: 'round',
     })
@@ -589,7 +594,10 @@ if (state.mode === 'draw-door' && state.previewDoor) {
     Number.isFinite(state.snapPoint.y)
   ) {
     const cs = state.cursorState || 'idle'
-    const color = cs === 'valid' ? SELECT_COLOR : cs === 'invalid' ? CURSOR_INVALID : CURSOR_IDLE
+    const color =
+      cs === 'valid' ? config.theme.wall.selected :
+        cs === 'invalid' ? config.theme.cursor.invalid :
+          config.theme.cursor.idle
 
     const r = 6 * invScale
     const strokeW = 2 * invScale
@@ -610,22 +618,22 @@ if (state.mode === 'draw-door' && state.previewDoor) {
   }
 
   // ---- room labels ----
-  const rooms = computeRooms({ minAreaM2: 0.8 }) // порог можешь менять
+  const rooms = computeRooms({ minAreaM2: config.rooms.minAreaM2 })
 
-  // ❌ не показываем "общую площадь коробки" — обычно это самая большая room
+  // не показываем "общую площадь коробки" — обычно это самая большая room
   let roomsToDraw = rooms
   if (rooms.length > 1) {
     const maxArea = Math.max(...rooms.map(r => r.areaM2))
     roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
   }
 
-
   let roomsG = overlayG.findOne('#room-labels')
   if (!roomsG) roomsG = overlayG.group().id('room-labels')
   roomsG.clear()
   roomsG.attr({ 'pointer-events': 'none' })
 
-  const fontWorld = 14 * invScale
+  const roomsFontPx = config.render?.rooms?.fontPx ?? 14
+  const fontWorld = roomsFontPx * invScale
 
   for (const r of roomsToDraw) {
     const txt = roomsG.text(`${fmtM2(r.areaM2)} м²`)
@@ -636,18 +644,15 @@ if (state.mode === 'draw-door' && state.previewDoor) {
         family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
         weight: 700,
       })
-      .fill('#111')
+      .fill(config.theme.rooms.text)
+
 
     txt.attr({
       'paint-order': 'stroke',
-      stroke: 'rgba(255,255,255,0.9)',
-      'stroke-width': fontWorld * 0.25,
+      stroke: config.theme.rooms.stroke,
+      'stroke-width': fontWorld * config.theme.rooms.strokeMul,
       'dominant-baseline': 'middle',
       'text-anchor': 'middle',
     })
   }
-
 }
-
-
-

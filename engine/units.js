@@ -1,4 +1,6 @@
-import { UNITS_PER_M } from './state.js'
+import { config } from './config.js'
+
+const UNITS_PER_M = config.units.UNITS_PER_M
 
 export const unitsToMeters = (u) => u / UNITS_PER_M
 export const metersToUnits = (m) => m * UNITS_PER_M

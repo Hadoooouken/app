@@ -1,7 +1,8 @@
-// engine/metrics.js
-import { state, UNITS_PER_M } from './state.js'
+import { state } from './state.js'
+import { config } from './config.js'
 
 const EPS = 1e-9
+const UNITS_PER_M = config.units.UNITS_PER_M
 const unitsToMeters = (u) => u / UNITS_PER_M
 
 // ======================================================

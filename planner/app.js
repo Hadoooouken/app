@@ -1,13 +1,6 @@
 // planner/app.js
-import {
-  state,
-  GRID_STEP_SNAP,
-  CLEAR_FROM_CAPITAL,
-  CAP_W,
-  NOR_W,
-  OVERLAP,
-} from '../engine/state.js'
-
+import { state } from '../engine/state.js'
+import { config, CLEAR_FROM_CAPITAL } from '../engine/config.js'
 import { historyCommit, historyBegin, historyEnd, undo, redo } from '../engine/history.js'
 
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
@@ -28,6 +21,20 @@ import {
   fmtM,
   fmtM2,
 } from '../engine/metrics.js'
+
+const GRID_STEP_SNAP = config.grid.snapStep
+const NOR_W = config.walls.NOR_W
+const CLEAR_CAP = CLEAR_FROM_CAPITAL() // ✅ важно: это число
+
+// --- config aliases (чтобы не было магических чисел) ---
+const PICK_WALL_PX = config.snap?.pick?.wallPx ?? 16
+const PICK_HANDLE_PX = config.snap?.pick?.handlePx ?? 14
+const PICK_DOOR_PX = config.snap?.pick?.doorPx ?? 18
+
+const DOOR_W_INTERIOR = config.doors?.defaultInteriorW ?? 75
+const DOOR_W_ENTRY = config.doors?.defaultEntryW ?? 90
+
+const DOOR_NUDGE_WORLD = config.doors?.nudgeStepWorld ?? config.grid.snapStep
 
 const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
@@ -273,7 +280,7 @@ function setMode(mode) {
 
   state.ui = state.ui || {}
   state.ui.lockPan = false
-  
+
 
   if (mode === 'draw-wall') {
     state.selectedWallId = null
@@ -295,7 +302,7 @@ function setMode(mode) {
   if (mode !== 'draw-door') {
     state.previewDoor = null
   }
-setPlannerCursor('default')
+  setPlannerCursor('default')
   syncUI()
   rerender()
 }
@@ -482,8 +489,9 @@ function clampDoorTToWallParams(t, doorW, wall) {
 function updateDoorPreviewAtPoint(p) {
   // курсор по умолчанию, дальше можем переключить на crosshair
   setPlannerCursor('default')
+  
 
-  const wallId = pickNormalWallAt(p, { tolPx: isTouchLike ? 22 : 18 })
+  const wallId = pickNormalWallAt(p, { tolPx: PICK_DOOR_PX })
   if (!wallId) {
     if (state.previewDoor) {
       state.previewDoor = null
@@ -515,11 +523,12 @@ function updateDoorPreviewAtPoint(p) {
 
   // ✅ сюда дошли значит можно ставить дверь → курсор crosshair
   setPlannerCursor('pointer')
+const doorW = DOOR_W_INTERIOR
 
-  let t = projectPointToWallT(p, w.a, w.b)
-  t = clampDoorTToWallParams(t, 75, w)
+let t = projectPointToWallT(p, w.a, w.b)
+t = clampDoorTToWallParams(t, doorW, w)
 
-  const next = { wallId, t, w: 75, thick: NOR_W }
+const next = { wallId, t, w: doorW, thick: NOR_W }
   const prev = state.previewDoor
   const changed =
     !prev ||
@@ -587,7 +596,7 @@ function nudgeSelectedDoorByArrow(key) {
   const dy = w.b.y - w.a.y
   const horizontal = Math.abs(dx) >= Math.abs(dy)
 
-  const STEP_WORLD = 25 // 25 см
+const STEP_WORLD = DOOR_NUDGE_WORLD
   const len = Math.hypot(dx, dy) || 1
   const dt = STEP_WORLD / len
 
@@ -671,13 +680,14 @@ function applyEdit(mouseWorld) {
 
   const snapOpts = {
     grid: GRID_STEP_SNAP,
-    snapPx: 14,
-    axisPx: 10,
+    snapPx: config.snap.edit.snapPx,
+    axisPx: config.snap.edit.axisPx,
     toGrid: true,
     toPoints: true,
     toAxis: true,
     toCapital: true,
     toNormals: true,
+    tGuard: config.snap.tGuard,
   }
 
   if (ed.kind === 'move') {
@@ -708,7 +718,7 @@ function applyEdit(mouseWorld) {
   }
 
   // ✅ минимальная длина стены (см)
-  const MIN_WALL_LEN = 50
+  const MIN_WALL_LEN = config.walls.MIN_LEN
   if (Math.hypot(newVB.x - newVA.x, newVB.y - newVA.y) < MIN_WALL_LEN) return
 
   if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
@@ -723,14 +733,14 @@ function applyEdit(mouseWorld) {
   w.va = newVA
   w.vb = newVB
 
-  normalizeNormalWall(w, { snapPx: 22, doTrim: true })
+  normalizeNormalWall(w, { snapPx: config.snap.draw.snapPx, doTrim: true })
 
   const clearOpts =
     (ed.kind === 'move')
       ? { endGuard: 0, samples: 32 }
       : { endGuard: 0.06, samples: 32 }
 
-  if (!isSegmentClearOfCapitals(w.a, w.b, CLEAR_FROM_CAPITAL, clearOpts)) {
+  if (!isSegmentClearOfCapitals(w.a, w.b, CLEAR_CAP, clearOpts)) {
     w.a = old.a
     w.b = old.b
     w.va = old.va
@@ -758,14 +768,16 @@ draw.node.addEventListener('pointerdown', (e) => {
       state.doors = state.doors || []
 
       // ✅ только одна interior-дверь на стену
-      const existsOnWall = (state.doors || []).some(d =>
-        d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
-      )
-      if (existsOnWall) {
-        hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
-        state.previewDoor = null
-        scheduleRerender()
-        return
+      if (config.doors.oneInteriorPerWall) {
+        const existsOnWall = (state.doors || []).some(d =>
+          d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
+        )
+        if (existsOnWall) {
+          hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
+          state.previewDoor = null
+          scheduleRerender()
+          return
+        }
       }
 
       historyCommit('add-door') // ✅ только если реально добавляем
@@ -774,7 +786,7 @@ draw.node.addEventListener('pointerdown', (e) => {
         kind: 'interior',
         wallId: pd.wallId,
         t: pd.t,
-        w: 75,
+        w: DOOR_W_INTERIOR,
         thick: NOR_W,
       })
       setPlannerCursor('default')
@@ -808,9 +820,10 @@ draw.node.addEventListener('pointerdown', (e) => {
   }
 
   // 1) wall handle
-  const h = typeof pickWallHandleAt === 'function'
-    ? pickWallHandleAt(p, { tolPx: 14 })
-    : null
+  const h =
+    typeof pickWallHandleAt === 'function'
+      ? pickWallHandleAt(p, { tolPx: PICK_HANDLE_PX })
+      : null
 
   if (h) {
     state.selectedWallId = h.id
@@ -821,7 +834,7 @@ draw.node.addEventListener('pointerdown', (e) => {
   }
 
   // 2) wall body
-  const id = pickNormalWallAt(p, { tolPx: 16 })
+ const id = pickNormalWallAt(p, { tolPx: PICK_WALL_PX })
   if (id) {
     state.selectedWallId = id
     state.selectedDoorId = null
