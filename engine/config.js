@@ -237,7 +237,7 @@ export const config = {
             normal: '#2a4f3d',
 
             // Цвет выделения (selected)
-            selected: 'rgba(53, 102, 78)',
+            selected: 'rgba(53, 102, 78, 1)',
 
             // Цвет наведения (hover)
             hover: 'rgba(42, 79, 61, 0.9)',

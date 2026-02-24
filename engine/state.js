@@ -26,6 +26,20 @@ export const state = {
   edit: null,
   ui: { dragged: false, lockPan: false, snapPulse: null },
   snapPoint: null,
+
+  // ✅ TRACE (режим обводки по картинке, скрытый)
+  // trace: {
+  //   active: false,
+  //   imageHref: '', // путь к jpg
+  //   rectWorld: { x: 0, y: 0, w: 1200, h: 600 }, // в world
+  //   points: [], // массив {x,y}
+  // },
+  trace: {
+    active: true,
+    imageHref: '../planner/assets/plan.jpg', // путь ОТ index.html (или от страницы, где открыт проект)
+    rectWorld: { x: 0, y: 0, w: 2000, h: 1200 }, // размеры в WORLD
+    points: [],
+  },
 }
 
 // ---------------- helpers ----------------

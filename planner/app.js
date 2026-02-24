@@ -996,5 +996,22 @@ window.addEventListener('resize', () => {
   })
 })
 
+function initTraceFromURL() {
+  const params = new URLSearchParams(location.search)
+  const traceOn = params.get('trace') === '1' || localStorage.trace === '1'
+
+  if (!traceOn) return
+
+  state.trace.active = true
+  state.trace.imageHref = './planner/assets/plan.jpg'
+
+  // ты говорил: верхняя ширина 12м, высота пусть 6м
+  // (если UNITS_PER_M=100, то 12м = 1200, 6м = 600)
+  state.trace.rectWorld = { x: 0, y: 0, w: 1200, h: 600 }
+
+  state.trace.points = []
+}
+initTraceFromURL()
+
 // удобно для дебага в консоли
 window.state = state

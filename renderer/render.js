@@ -41,6 +41,19 @@ function unitNormal(a, b) {
   return { nx: -dy / len, ny: dx / len }
 }
 
+function ensureTraceRectMatchesCaps(walls) {
+  const bb = getCapitalBBox(walls)
+  if (!bb) return null
+
+  const pad = 0 // можешь поставить 50..150 world если надо поля
+  return {
+    x: bb.minX - pad,
+    y: bb.minY - pad,
+    w: (bb.maxX - bb.minX) + pad * 2,
+    h: (bb.maxY - bb.minY) + pad * 2,
+  }
+}
+
 // bbox for "inside box" label — use capitals a/b
 function getCapitalBBox(walls) {
   const caps = walls.filter(w => w.kind === 'capital')
@@ -142,6 +155,7 @@ function ensureScene(draw) {
   // не чистим каждый кадр, создаём один раз
   const scene = draw.group().id('scene')
   const gridG = scene.group().id('grid')
+  const traceG = scene.group().id('trace')
   const wallsG = scene.group().id('walls')
   const dimsG = scene.group().id('dims')
   const overlayG = scene.group().id('overlay')
@@ -161,7 +175,7 @@ function ensureScene(draw) {
     .fill(pattern)
     .attr({ 'pointer-events': 'none' })
 
-  cache = { draw, scene, gridG, wallsG, dimsG, overlayG, gridRect, pattern }
+  cache = { draw, scene, gridG, wallsG, dimsG, overlayG, gridRect, pattern, traceG }
   return cache
 }
 
@@ -170,7 +184,7 @@ export function render(draw) {
   // но оставляю как у тебя пока.
   ensureCapitalInnerFaces()
 
-  const { scene, wallsG, dimsG, overlayG } = ensureScene(draw)
+  const { scene, traceG, wallsG, dimsG, overlayG } = ensureScene(draw)
 
   // transform whole scene
   scene.transform({
@@ -192,10 +206,40 @@ export function render(draw) {
   wallsG.clear()
   dimsG.clear()
   overlayG.clear()
+  traceG.clear()
 
-  const walls = state.walls || []
+    const walls = state.walls || []
   const caps = walls.filter(w => w.kind === 'capital')
   const normals = walls.filter(w => w.kind !== 'capital')
+
+
+
+
+  // ---- TRACE UNDERLAY ----
+  // if (state.trace?.active && state.trace.imageHref) {
+  //   const tr = state.trace
+  //   const auto = ensureTraceRectMatchesCaps(walls)
+  //   const r = tr.rectWorld ?? auto
+
+  //   if (r) {
+  //     traceG
+  //       .image(tr.imageHref)
+  //       .move(r.x, r.y)
+  //       .size(r.w, r.h)
+  //       .opacity(tr.opacity ?? 0.55)
+  //       .attr({ 'pointer-events': 'none' })
+  //   }
+
+  //   const pts = tr.points || []
+  //   if (pts.length >= 2) {
+  //     traceG
+  //       .polyline(pts.map(p => [p.x, p.y]))
+  //       .fill('none')
+  //       .stroke({ width: 2 * invScale, color: '#ff3b30' })
+  //       .attr({ 'pointer-events': 'none' })
+  //   }
+  // }
+
 
   // 1) CAPITAL
   for (const w of caps) {
@@ -210,7 +254,7 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-    // ---- WINDOWS (only init, only capital) ----
+  // ---- WINDOWS (only init, only capital) ----
   const windows = state.windows || []
   if (windows.length) {
     const capCentroid = getCapitalsCentroid(walls) // уже есть у тебя ниже, можно оставить локально тут
@@ -677,23 +721,23 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-// ---- room labels ----
-const rooms = computeRooms({ minAreaM2: config.rooms.minAreaM2 })
+  // ---- room labels ----
+  const rooms = computeRooms({ minAreaM2: config.rooms.minAreaM2 })
 
-let roomsG = overlayG.findOne('#room-labels')
-if (!roomsG) roomsG = overlayG.group().id('room-labels')
-roomsG.clear()
-roomsG.attr({ 'pointer-events': 'none' })
+  let roomsG = overlayG.findOne('#room-labels')
+  if (!roomsG) roomsG = overlayG.group().id('room-labels')
+  roomsG.clear()
+  roomsG.attr({ 'pointer-events': 'none' })
 
-// ✅ НЕТ “комнат” — НЕ рисуем числа вообще
-// (коробка одна — это не комната для тебя)
-if (rooms.length <= 1) return
+  // ✅ НЕТ “комнат” — НЕ рисуем числа вообще
+  // (коробка одна — это не комната для тебя)
+  if (rooms.length <= 1) return
 
-// иначе убираем внешнюю грань (самую большую)
-const maxArea = Math.max(...rooms.map(r => r.areaM2))
-const roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
+  // иначе убираем внешнюю грань (самую большую)
+  const maxArea = Math.max(...rooms.map(r => r.areaM2))
+  const roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
 
-// ... дальше твой код отрисовки roomsToDraw как сейчас
+  // ... дальше твой код отрисовки roomsToDraw как сейчас
   if (!roomsG) roomsG = overlayG.group().id('room-labels')
   roomsG.clear()
   roomsG.attr({ 'pointer-events': 'none' })

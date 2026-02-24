@@ -73,17 +73,31 @@ function snapAndTrimNormalsToCapitals() {
 // wallId — id капитальной стены
 // t — положение по стене (0..1)
 // kind: 'std' | 'balcony'
-export const studioWindows = [
-  // Верхняя стена (capTop = w1)
-  { wallId: 'w1', t: 0.4, kind: 'std' },
-  { wallId: 'w1', t: 0.80, kind: 'std' },
-  // Пример на правой стене (если нужно оставить)
-  { wallId: 'w6', t: 0.75, kind: 'balcony' },
-]
+// export const studioWindows = [
+// Верхняя стена (capTop = w1)
+// { wallId: 'w1', t: 0.4, kind: 'std' },
+// { wallId: 'w1', t: 0.80, kind: 'std' },
+// Пример на правой стене (если нужно оставить)
+//   { wallId: 'w6', t: 0.75, kind: 'balcony' },
+// ]
 // простая дверь-id (не обязательно, но удобно)
 function did() {
   return `d${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
+
+// ✅ Окна для шаблона 12x7.6
+// wallId — id капитальной стены
+// t — положение по стене (0..1)
+export const studioWindows = [
+  // Верхняя стена (capTop = w1), две штуки
+  { wallId: 'w1', t: 600 / 1200, kind: 'std' }, // центр окна x=500
+  { wallId: 'w1', t: 980 / 1200, kind: 'std' }, // центр окна x=820
+
+  // Левая стена (capLeft = w4), окно примерно по центру y=220
+  // capLeft идет (0,760)->(0,0), t = (760 - y)/760
+  { wallId: 'w1', t: (350 - 220) / 760, kind: 'balcony' },
+]
+
 
 export function loadStudioTemplate() {
   id = 1
@@ -93,61 +107,52 @@ export function loadStudioTemplate() {
   const x1 = 1200
   const y1 = 760
 
-  const notchX = 980
-  const notchY = 620
+  // ---- ВНЕШНИЙ КОНТУР (прямоугольник 12x7.6) ----
+  const capTop = W(x0, y0, x1, y0, 'capital')   // w1
+  const capRight = W(x1, y0, x1, y1, 'capital')   // w2
+  const capBottom = W(x1, y1, x0, y1, 'capital')   // w3
+  const capLeft = W(x0, y1, x0, y0, 'capital')   // w4
 
-  const bedLeft = 760
-  const bedTop = 0
-  const bedBottom = 360
+  // ---- ВНУТРЕННИЕ КАПИТАЛЬНЫЕ ----
+  // Главная внутренняя вертикальная: x=6м => 600
+  const capMid = W(400, 0, 400, 520, 'capital')    // w5
 
-  const bathTop = 520
-  const bathLeft = 520
-  const bathRight = 820
 
-  // --- стены ---
-  const capTop = W(x0, y0, x1, y0, 'capital')
-  const capRightUp = W(x1, y0, x1, notchY, 'capital')
-  const capNotch = W(x1, notchY, notchX, notchY, 'capital')
-  const capRightDown = W(notchX, notchY, notchX, y1, 'capital')
-  const capBottom = W(notchX, y1, x0, y1, 'capital')
-  const capLeft = W(x0, y1, x0, y0, 'capital')
+  // Горизонтальная слева: отделяет нижний коридор
+  const capMidHLL = W(0, 200, 150, 200, 'capital')
+  const capMidHLR = W(400, 200, 250, 200, 'capital')    // w6
+  const capMidLL = W(400, 750, 400, 650, 'capital') // 1 метр внутри   // w6
+
 
 
   state.walls = [
-    capTop,
-    capRightUp,
-    capNotch,
-    capRightDown,
-    capBottom,
-    capLeft,
-
-
+    capTop, capRight, capBottom, capLeft,
+    capMid, capMidHLL, capMidHLR, capMidLL
   ]
 
-  // ✅ подрезаем нормалы к капитальным
+  // ✅ подрезка нормалей тут не влияет (нормалей нет), можно оставить
   snapAndTrimNormalsToCapitals()
 
-  // ✅ гарантируем ia/ib для capital (и УБИРАЕМ это из render)
+  // ✅ строим внутренние грани капитальных
   ensureCapitalInnerFaces()
 
-  // --- двери ---
-  // входная дверь (locked)
+  // ---- ДВЕРИ ----
+  // Входная дверь на нижней стене по центру (t=0.5)
   state.doors = [
     {
       id: did(),
       kind: 'entry',
-      wallId: capBottom.id, // ✅ на капитальной
-      t: 0.25,
+      wallId: capBottom.id, // w3
+      t: 0.5,
       w: 90,
       thick: CAP_W,
       locked: true,
     },
-
-    // пример межкомнатной (двигается)
-
   ]
 
-
+  // ---- ОКНА ----
+  // Если у тебя есть state.windows — лучше так:
+  state.windows = [...studioWindows]
 
   // сброс интерактива
   state.draft = null
