@@ -719,6 +719,15 @@ function stopEdit() {
 
 const clamp2 = (v, a, b) => Math.max(a, Math.min(b, v))
 
+// ✅ FIX: для EDIT/MOVE пересечения надо проверять тем же допуском,
+// что и snap в edit-режиме, иначе возникает "невидимый зазор".
+function allowedEdit(a, b, ignoreWallId) {
+  return isSegmentAllowed(a, b, {
+    ignoreWallId,
+    tolPx: config.snap.edit.snapPx, // ✅ вместо дефолтных 2px
+  })
+}
+
 function applyEdit(mouseWorld) {
   const ed = state.edit
   if (!ed) return
@@ -743,21 +752,50 @@ function applyEdit(mouseWorld) {
     tGuard: config.snap.tGuard,
   }
 
+  // ✅ helper: snapped? (если точка реально сместилась)
+  const isSnapped = (p0, p1) => Math.hypot(p1.x - p0.x, p1.y - p0.y) > 1e-6
+
   if (ed.kind === 'move') {
-    let movedA = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+    // 1) базовая трансляция (без снапа)
+    const a0 = { x: ed.startVA.x + dx, y: ed.startVA.y + dy }
+    const b0 = { x: ed.startVB.x + dx, y: ed.startVB.y + dy }
 
-    movedA = smartSnapPoint(movedA, null, {
-      ...snapOpts,
-      toAxis: false,
-      toCapital: false,
-      toNormals: false,
-    })
+    // 2) пробуем снапнуть A и снапнуть B (каждый даёт delta, применяем ко всей стене)
+    const aSnap = smartSnapPoint(a0, null, { ...snapOpts, toAxis: false })
+    const bSnap = smartSnapPoint(b0, null, { ...snapOpts, toAxis: false })
 
-    const offX = ed.startVB.x - ed.startVA.x
-    const offY = ed.startVB.y - ed.startVA.y
+    const cand = []
 
-    newVA = movedA
-    newVB = { x: movedA.x + offX, y: movedA.y + offY }
+    if (isSnapped(a0, aSnap)) {
+      const dax = aSnap.x - a0.x
+      const day = aSnap.y - a0.y
+      cand.push({
+        a: { x: a0.x + dax, y: a0.y + day },
+        b: { x: b0.x + dax, y: b0.y + day },
+        d2: dax * dax + day * day,
+      })
+    }
+
+    if (isSnapped(b0, bSnap)) {
+      const dbx = bSnap.x - b0.x
+      const dby = bSnap.y - b0.y
+      cand.push({
+        a: { x: a0.x + dbx, y: a0.y + dby },
+        b: { x: b0.x + dbx, y: b0.y + dby },
+        d2: dbx * dbx + dby * dby,
+      })
+    }
+
+    // 3) если ничего не снапнулось — просто переносим
+    if (!cand.length) {
+      newVA = a0
+      newVB = b0
+    } else {
+      // берём минимальный сдвиг (обычно это тот конец, к которому реально “липли”)
+      cand.sort((x, y) => x.d2 - y.d2)
+      newVA = cand[0].a
+      newVB = cand[0].b
+    }
   }
 
   if (ed.kind === 'a') {
@@ -770,11 +808,12 @@ function applyEdit(mouseWorld) {
     newVB = smartSnapPoint(newVB, newVA, snapOpts)
   }
 
-  // ✅ минимальная длина стены (см)
+  // ✅ минимальная длина
   const MIN_WALL_LEN = config.walls.MIN_LEN
   if (Math.hypot(newVB.x - newVA.x, newVB.y - newVA.y) < MIN_WALL_LEN) return
 
-  if (!isSegmentAllowed(newVA, newVB, { ignoreWallId: ed.id })) return
+  // ✅ allowed с большим tolPx
+  if (!allowedEdit(newVA, newVB, ed.id)) return
 
   const old = {
     a: { ...w.a },
@@ -801,10 +840,10 @@ function applyEdit(mouseWorld) {
     return
   }
 
+  // финально
   w.va = newVA
   w.vb = newVB
 }
-
 // ---------------- POINTER: select door / wall / empty ----------------
 draw.node.addEventListener('pointerdown', (e) => {
   if (state.mode === 'draw-door') {

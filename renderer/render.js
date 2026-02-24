@@ -208,37 +208,9 @@ export function render(draw) {
   overlayG.clear()
   traceG.clear()
 
-    const walls = state.walls || []
+  const walls = state.walls || []
   const caps = walls.filter(w => w.kind === 'capital')
   const normals = walls.filter(w => w.kind !== 'capital')
-
-
-
-
-  // ---- TRACE UNDERLAY ----
-  // if (state.trace?.active && state.trace.imageHref) {
-  //   const tr = state.trace
-  //   const auto = ensureTraceRectMatchesCaps(walls)
-  //   const r = tr.rectWorld ?? auto
-
-  //   if (r) {
-  //     traceG
-  //       .image(tr.imageHref)
-  //       .move(r.x, r.y)
-  //       .size(r.w, r.h)
-  //       .opacity(tr.opacity ?? 0.55)
-  //       .attr({ 'pointer-events': 'none' })
-  //   }
-
-  //   const pts = tr.points || []
-  //   if (pts.length >= 2) {
-  //     traceG
-  //       .polyline(pts.map(p => [p.x, p.y]))
-  //       .fill('none')
-  //       .stroke({ width: 2 * invScale, color: '#ff3b30' })
-  //       .attr({ 'pointer-events': 'none' })
-  //   }
-  // }
 
 
   // 1) CAPITAL
@@ -691,34 +663,34 @@ export function render(draw) {
   }
 
   // ---------- CURSOR DOT ----------
-  if (
-    state.mode === 'draw-wall' &&
-    state.snapPoint &&
-    Number.isFinite(state.snapPoint.x) &&
-    Number.isFinite(state.snapPoint.y)
-  ) {
-    const cs = state.cursorState || 'idle'
-    const color =
-      cs === 'valid' ? config.theme.wall.selected :
-        cs === 'invalid' ? config.theme.cursor.invalid :
-          config.theme.cursor.idle
+  if (state.mode === 'draw-wall') {
+    // ✅ курсор = КОНЕЦ previewWall, если он есть (чтобы совпадал с пунктиром)
+    // иначе = snapPoint (когда previewWall ещё не создан)
+    const p = state.previewWall?.b || state.snapPoint
 
-    const r = 6 * invScale
-    const strokeW = 2 * invScale
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      // ✅ цвет/состояние лучше брать из previewWall.ok (если есть)
+      const ok = state.previewWall ? !!state.previewWall.ok : (state.cursorState !== 'invalid')
 
-    overlayG
-      .circle(r * 2 + strokeW * 2)
-      .center(state.snapPoint.x, state.snapPoint.y)
-      .fill({ color: '#fff', opacity: 0.9 })
-      .stroke({ width: 0 })
-      .attr({ 'pointer-events': 'none' })
+      const color = ok ? config.theme.wall.selected : config.theme.cursor.invalid
 
-    overlayG
-      .circle(r * 2)
-      .center(state.snapPoint.x, state.snapPoint.y)
-      .fill({ color, opacity: 0.95 })
-      .stroke({ width: strokeW, color: '#fff', opacity: 0.9 })
-      .attr({ 'pointer-events': 'none' })
+      const r = 6 * invScale
+      const strokeW = 2 * invScale
+
+      overlayG
+        .circle(r * 2 + strokeW * 2)
+        .center(p.x, p.y)
+        .fill({ color: '#fff', opacity: 0.9 })
+        .stroke({ width: 0 })
+        .attr({ 'pointer-events': 'none' })
+
+      overlayG
+        .circle(r * 2)
+        .center(p.x, p.y)
+        .fill({ color, opacity: 0.95 })
+        .stroke({ width: strokeW, color: '#fff', opacity: 0.9 })
+        .attr({ 'pointer-events': 'none' })
+    }
   }
 
   // ---- room labels ----

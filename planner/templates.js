@@ -95,7 +95,9 @@ export const studioWindows = [
 
   // Левая стена (capLeft = w4), окно примерно по центру y=220
   // capLeft идет (0,760)->(0,0), t = (760 - y)/760
-  { wallId: 'w1', t: (350 - 220) / 760, kind: 'balcony' },
+  { wallId: 'w1', t: (400 - 220) / 760, kind: 'balcony' },
+  { wallId: 'w1', t: (66) / 760, kind: 'balcony' },
+  { wallId: 'w6', t: (200) / 760, kind: 'std' },
 ]
 
 
@@ -119,15 +121,14 @@ export function loadStudioTemplate() {
 
 
   // Горизонтальная слева: отделяет нижний коридор
-  const capMidHLL = W(0, 200, 150, 200, 'capital')
-  const capMidHLR = W(400, 200, 250, 200, 'capital')    // w6
+  const capMidHLL = W(0, 200, 400, 200, 'capital')
   const capMidLL = W(400, 750, 400, 650, 'capital') // 1 метр внутри   // w6
 
 
 
   state.walls = [
     capTop, capRight, capBottom, capLeft,
-    capMid, capMidHLL, capMidHLR, capMidLL
+    capMid, capMidHLL, capMidLL
   ]
 
   // ✅ подрезка нормалей тут не влияет (нормалей нет), можно оставить
@@ -144,6 +145,15 @@ export function loadStudioTemplate() {
       kind: 'entry',
       wallId: capBottom.id, // w3
       t: 0.5,
+      w: 90,
+      thick: CAP_W,
+      locked: true,
+    },
+        {
+      id: did(),
+      kind: 'entry',
+      wallId: capMidHLL.id, // w3
+      t: 0.6,
       w: 90,
       thick: CAP_W,
       locked: true,

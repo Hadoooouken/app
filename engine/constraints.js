@@ -19,8 +19,8 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     toPoints = true,
     toAxis = true,
     toCapital = true,
-    toNormals = true, // T-стык к normal сегментам
-    tGuard = config.snap.tGuard, // не липнуть к самым концам normal
+    toNormals = true,
+    tGuard = config.snap.tGuard,
   } = opts
 
   const scale = Math.max(1e-6, state.view.scale)
@@ -29,13 +29,32 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
 
   let best = { ...p }
   let bestDist = Infinity
+  let bestKind = null
   let snapped = false
 
-  const consider = (q) => {
-    const d = dist(p, q)
-    if (d < bestDist && d <= snapWorld) {
+  const prioOf = (kind) => {
+    switch (kind) {
+      case 'point': return 5
+      case 'normal': return 4
+      case 'axis': return 3
+      case 'grid': return 2
+      case 'capital': return 1
+      default: return 0
+    }
+  }
+
+  const consider = (q, kind) => {
+    const d = dist(p, q) // расстояние ВСЕГДА от исходной p
+    if (d > snapWorld) return
+
+    const pr = prioOf(kind)
+    const bestPr = prioOf(bestKind)
+
+    // приоритет важнее расстояния, иначе capital/normal перебивают точку стены
+    if (!snapped || pr > bestPr || (pr === bestPr && d < bestDist)) {
       best = { ...q }
       bestDist = d
+      bestKind = kind
       snapped = true
     }
   }
@@ -45,43 +64,39 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
     consider({
       x: Math.round(p.x / grid) * grid,
       y: Math.round(p.y / grid) * grid,
-    })
+    }, 'grid')
   }
 
-  // 2) точки (концы всех стен)
+  // 2) точки (концы всех стен) — ВАЖНО: только видимые a/b (см. collectSnapPoints ниже)
   if (toPoints) {
-    for (const q of collectSnapPoints()) consider(q)
+    for (const q of collectSnapPoints()) consider(q, 'point')
   }
 
-  // 3) axis (если есть fromPoint)
+  // 3) axis
   if (toAxis && fromPoint) {
-    // если включена сетка — свободную координату тоже к сетке
     const snapY = (toGrid && grid > 0) ? (Math.round(p.y / grid) * grid) : p.y
     const snapX = (toGrid && grid > 0) ? (Math.round(p.x / grid) * grid) : p.x
 
-    if (Math.abs(p.x - fromPoint.x) <= axisWorld) consider({ x: fromPoint.x, y: snapY })
-    if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: snapX, y: fromPoint.y })
+    if (Math.abs(p.x - fromPoint.x) <= axisWorld) consider({ x: fromPoint.x, y: snapY }, 'axis')
+    if (Math.abs(p.y - fromPoint.y) <= axisWorld) consider({ x: snapX, y: fromPoint.y }, 'axis')
   }
 
-  // 4) T-стык: проекция на normal сегменты (только внутренняя часть)
+  // 4) T-снап к normal (квантуем по глобальной сетке 25см)
   if (toNormals) {
-    const hit = snapPointToNormalSegments(best, { tolWorld: snapWorld, guardT: tGuard })
-    if (hit) {
-      best = hit
-      snapped = true
-    }
+    const hit = snapPointToNormalSegments(p, {
+      tolWorld: snapWorld,
+      guardT: tGuard,
+      stepWorld: (toGrid && grid > 0) ? grid : 0,
+    })
+    if (hit) consider(hit, 'normal')
   }
 
-  // 5) прилипаем к капитальным — ПРОЕКЦИЯ на ближайший capital сегмент
+  // 5) capital — самый низкий приоритет, чтобы НЕ ломал стыки normal-normal
   if (toCapital) {
-    const hit = snapPointToCapitalSegments(best, snapWorld)
-    if (hit) {
-      best = hit
-      snapped = true
-    }
+    const hit = snapPointToCapitalSegments(p, snapWorld)
+    if (hit) consider(hit, 'capital')
   }
 
-  // snap pulse для рендера
   state.ui = state.ui || {}
   if (snapped) {
     state.ui.snapPulse = {
@@ -98,49 +113,116 @@ export function smartSnapPoint(p, fromPoint, opts = {}) {
 
 function collectSnapPoints() {
   const pts = []
+  const step = config.grid.snapStep // 25см
+  const seen = new Set()
+  const key = (p) => `${Math.round(p.x * 1000)}:${Math.round(p.y * 1000)}`
+  const push = (p) => {
+    const k = key(p)
+    if (seen.has(k)) return
+    seen.add(k)
+    pts.push({ x: p.x, y: p.y })
+  }
+
+  const EPS_AXIS = 1e-6
+
+  const addStepPoints = (a, b) => {
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+
+    // горизонтальная
+    if (Math.abs(dy) < EPS_AXIS) {
+      const y = a.y
+      const x0 = Math.min(a.x, b.x)
+      const x1 = Math.max(a.x, b.x)
+
+      // точки по ГЛОБАЛЬНОЙ сетке, которые лежат на отрезке
+      const start = Math.ceil(x0 / step) * step
+      const end = Math.floor(x1 / step) * step
+
+      for (let x = start; x <= end; x += step) push({ x, y })
+      return
+    }
+
+    // вертикальная
+    if (Math.abs(dx) < EPS_AXIS) {
+      const x = a.x
+      const y0 = Math.min(a.y, b.y)
+      const y1 = Math.max(a.y, b.y)
+
+      const start = Math.ceil(y0 / step) * step
+      const end = Math.floor(y1 / step) * step
+
+      for (let y = start; y <= end; y += step) push({ x, y })
+      return
+    }
+
+    // если вдруг диагональ — просто не добавляем шаговые точки
+  }
+
   for (const w of (state.walls || [])) {
     if (!w) continue
 
-    // capital — как есть (в будущем можно заменить на ia/ib)
+    // capital — только концы
     if (w.kind === 'capital') {
-      pts.push(w.a, w.b)
+      push(w.a); push(w.b)
       continue
     }
 
-    // normal — добавляем и видимые, и строительные точки
-    const a = w.a
-    const b = w.b
-    const va = w.va || w.a
-    const vb = w.vb || w.b
-
-    pts.push(a, b, va, vb)
+    // normal — ВИДИМЫЕ концы (a/b) + точки каждые 25см вдоль стены
+    push(w.a); push(w.b)
+    addStepPoints(w.a, w.b)
   }
+
   return pts
 }
+
+// ✅ normal: ТОЛЬКО ВИДИМЫЕ концы
+// иначе ты липнешь к va/vb (ось ка
 
 // ---------------- T SNAP TO NORMAL SEGMENTS ----------------
 
 // вернуть point если в радиусе и НЕ около концов, иначе null
-function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08 } = {}) {
+function snapPointToNormalSegments(p, { tolWorld, guardT = 0.08, stepWorld = 0 } = {}) {
   let best = null
   let bestD = Infinity
 
   for (const w of (state.walls || [])) {
     if (!w || w.kind === 'capital') continue
 
-    // ✅ лучше брать строительную ось
     const a = w.va || w.a
     const b = w.vb || w.b
 
     const pr = projectPointToSegment(p, a, b) // {point,t,d}
     if (pr.d > tolWorld) continue
-
-    // если почти у конца — это не T, а узел (пусть toPoints решает)
     if (pr.t <= guardT || pr.t >= (1 - guardT)) continue
 
-    if (pr.d < bestD) {
-      bestD = pr.d
-      best = pr.point
+    let q = pr.point
+
+    if (stepWorld > 0) {
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const adx = Math.abs(dx)
+      const ady = Math.abs(dy)
+
+      // ✅ если почти вертикальная
+      if (ady >= adx) {
+        const yQ = Math.round(q.y / stepWorld) * stepWorld
+        let tQ = (Math.abs(dy) < 1e-9) ? pr.t : (yQ - a.y) / dy
+        tQ = Math.max(guardT, Math.min(1 - guardT, tQ))
+        q = { x: a.x + dx * tQ, y: a.y + dy * tQ }
+      } else {
+        // ✅ почти горизонтальная
+        const xQ = Math.round(q.x / stepWorld) * stepWorld
+        let tQ = (Math.abs(dx) < 1e-9) ? pr.t : (xQ - a.x) / dx
+        tQ = Math.max(guardT, Math.min(1 - guardT, tQ))
+        q = { x: a.x + dx * tQ, y: a.y + dy * tQ }
+      }
+    }
+
+    const d = dist(p, q)
+    if (d < bestD) {
+      bestD = d
+      best = q
     }
   }
 
@@ -233,6 +315,11 @@ export function isSegmentAllowed(a, b, opts = {}) {
     const nearNewA = Math.hypot(ip.x - a.x, ip.y - a.y) <= tolWorld
     const nearNewB = Math.hypot(ip.x - b.x, ip.y - b.y) <= tolWorld
     if (nearNewA || nearNewB) continue
+
+    // ✅ НОВОЕ: если пересечение рядом с концом СУЩЕСТВУЮЩЕЙ стены — ТОЖЕ разрешаем
+    const nearOldA = Math.hypot(ip.x - wa.x, ip.y - wa.y) <= tolWorld
+    const nearOldB = Math.hypot(ip.x - wb.x, ip.y - wb.y) <= tolWorld
+    if (nearOldA || nearOldB) continue
 
     // ❌ иначе новый сегмент пересёк существующую стену "внутри себя"
     return false

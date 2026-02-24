@@ -12,6 +12,12 @@ import {
   isSegmentClearOfCapitals,
 } from '../engine/constraints.js'
 
+// ✅ нужно для T-обрубки
+import {
+  segmentIntersectionParams,
+  projectPointToSegment,
+} from '../engine/geom.js'
+
 // ---------------- helpers ----------------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
@@ -21,7 +27,7 @@ const TAP_THRESH_PX = 10
 const CANCEL_A_PX = 14
 const DRAG_START_PX = 10 // порог чтобы считать drag на таче
 
-const MIN_WALL_LEN = config.walls.MIN_LEN // ✅ из конфига
+const MIN_WALL_LEN = config.walls.MIN_LEN
 
 const clearPulse = () => {
   if (state.ui) state.ui.snapPulse = null
@@ -31,11 +37,21 @@ const isCoarse = () => {
   try { return matchMedia('(pointer: coarse)').matches } catch { return false }
 }
 
-// считаем тачем всё, что не мышь, плюс любые coarse-девайсы (включая pen на iPad)
+// считаем тачем всё, что не мышь, плюс любые coarse-девайсы (включая pen)
 const isTouchLikePointer = (pointerType) => pointerType !== 'mouse' || isCoarse()
 
-// ✅ ДЛЯ РИСОВАНИЯ делаем “clear” заметно меньше, чем для select
+// ✅ для рисования clearance мягче
 const DRAW_CLEAR = Math.max(0, CLEAR_FROM_CAPITAL() * 0.1)
+
+// --------------------------------------------------
+// ✅ FIX: isSegmentAllowed должен иметь tolPx >= радиуса снапа
+function allowedDraw(a, b, ignoreWallId = null) {
+  return isSegmentAllowed(a, b, {
+    ignoreWallId,
+    tolPx: config.snap.draw.snapPx,
+  })
+}
+// --------------------------------------------------
 
 // ---------------- trim to capitals ----------------
 function nearestPointOnSeg(p, a, b) {
@@ -63,7 +79,6 @@ function trimWallToCapitals(wall) {
   const NOR_W = config.walls.NOR_W
   const OVERLAP = config.walls.OVERLAP
 
-  // ✅ сохраняем исходные точки (важно для L-стыков)
   const a0 = { ...wall.a }
   const b0 = { ...wall.b }
 
@@ -86,19 +101,15 @@ function trimWallToCapitals(wall) {
 
     if (!best) return { end, snapped: null }
 
-    // end = видимый тримнутый конец
-    // snapped = точка касания (для va/vb)
     return { end: trimPointBack(other, best.q, trimLenVisual), snapped: best.q }
   }
 
-  // ✅ считаем оба конца от ОДНИХ И ТЕХ ЖЕ исходных a0/b0
   const aRes = snapEnd(a0, b0)
   const bRes = snapEnd(b0, a0)
 
   wall.a = aRes.end
   wall.b = bRes.end
 
-  // ✅ va/vb — в точку касания (если была), иначе остаётся исходное
   if (aRes.snapped) wall.va = { ...aRes.snapped }
   if (bRes.snapped) wall.vb = { ...bRes.snapped }
 
@@ -112,7 +123,41 @@ function distPx(a, b) {
   return Math.hypot(dx, dy)
 }
 
-// --------------------------------------------------
+/**
+ * ✅ T-обрубка: если новый сегмент пересекает existing normal “в середине”
+ * → обрубаем B в точку первого пересечения.
+ */
+function clampBToFirstNormalIntersection(a, b, { tolWorld, guardT = 0.08 } = {}) {
+  let best = null
+  let bestDist = Infinity
+
+  for (const w of (state.walls || [])) {
+    if (!w || w.kind === 'capital') continue
+
+    const wa = w.va || w.a
+    const wb = w.vb || w.b
+
+    const hit = segmentIntersectionParams(a, b, wa, wb)
+    if (!hit || hit.type !== 'point') continue
+
+    const ip = hit.p
+
+    // пересечение должно быть "внутри" existing сегмента (иначе это уголок)
+    const pr = projectPointToSegment(ip, wa, wb)
+    if (pr.t <= guardT || pr.t >= (1 - guardT)) continue
+
+    // не обрубать прямо у A
+    const dA = Math.hypot(ip.x - a.x, ip.y - a.y)
+    if (dA <= tolWorld) continue
+
+    if (dA < bestDist) {
+      bestDist = dA
+      best = ip
+    }
+  }
+
+  return best ? { ...best } : b
+}
 
 export function initPointer(draw, { newWallId } = {}) {
   let firstPoint = null
@@ -121,7 +166,7 @@ export function initPointer(draw, { newWallId } = {}) {
 
   // touchlike draw state
   let touchPending = null      // { sx, sy, startP }
-  let touchDragging = false    // started actual wall drawing
+  let touchDragging = false
 
   // render throttle
   let raf = 0
@@ -149,7 +194,6 @@ export function initPointer(draw, { newWallId } = {}) {
   }
 
   const cancelStart = () => {
-    // отмена A (клик рядом с A на десктопе)
     firstPoint = null
     suppressPreview = false
     touchPending = null
@@ -174,8 +218,7 @@ export function initPointer(draw, { newWallId } = {}) {
 
     // на таче возвращаем курсор в A (если он был)
     if (isTouchLikePointer(pointerType)) {
-      if (aSaved) state.snapPoint = aSaved
-      else state.snapPoint = null
+      state.snapPoint = aSaved ? aSaved : null
     } else {
       state.snapPoint = { ...p }
     }
@@ -192,9 +235,41 @@ export function initPointer(draw, { newWallId } = {}) {
       toPoints: true,
       toAxis: true,
       toCapital: true,
-      toNormals: true,
+      // пока включён toNormals, при проходе рядом со стеной курсор будет “приклеиваться” к проекции на неё 
+      // (особенно на маленьком зуме, где snapWorld = snapPx/scale становится огромным).
+      toNormals: false,
       tGuard: config.snap.tGuard,
     })
+  }
+
+  /**
+   * ✅ Главный UX-fix:
+   * - pSnap = где курсор (ходит за мышью)
+   * - pFinal = куда реально встанет конец стены (после T-обрубки)
+   * Раньше ты делал snapPoint=pFinal → визуально “залипало”.
+   */
+  function applyDrawPreview(rawB) {
+    const pSnap = snapAt(rawB, firstPoint)
+
+    const tolWorld = config.snap.draw.snapPx / Math.max(1e-6, state.view.scale)
+    const pFinal = clampBToFirstNormalIntersection(firstPoint, pSnap, {
+      tolWorld,
+      guardT: config.snap.tGuard,
+    })
+
+    // ✅ курсор должен ходить за мышью
+    state.snapPoint = { ...pSnap }
+
+    const len = Math.hypot(pFinal.x - firstPoint.x, pFinal.y - firstPoint.y)
+    const okLen = len >= MIN_WALL_LEN
+
+    const okAllowed = allowedDraw(firstPoint, pFinal)
+    const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, DRAW_CLEAR)
+    const ok = okLen && okAllowed && okClear
+
+    state.cursorState = ok ? 'valid' : 'invalid'
+    // ✅ а превью заканчивается там, где реально остановится стена
+    state.previewWall = { a: firstPoint, b: pFinal, ok }
   }
 
   // --- MOVE: cursor + preview ---
@@ -202,7 +277,7 @@ export function initPointer(draw, { newWallId } = {}) {
     if (state.mode !== 'draw-wall') return
     if (e.pointerType !== 'mouse') e.preventDefault?.()
 
-    // ✅ TOUCH / PEN / COARSE: start draw only after drag threshold
+    // TOUCH / PEN / COARSE: стартуем только после drag threshold
     if (isTouchLikePointer(e.pointerType)) {
       if (!touchPending) return
 
@@ -210,15 +285,12 @@ export function initPointer(draw, { newWallId } = {}) {
       const dy = e.clientY - touchPending.sy
       const moved2 = dx * dx + dy * dy
 
-      // пока не drag — ничего не показываем
       if (!touchDragging && moved2 < DRAG_START_PX * DRAG_START_PX) return
 
-      // drag начался → фиксируем A
       if (!touchDragging) {
         touchDragging = true
         firstPoint = { ...touchPending.startP }
 
-        // кружок только в A
         state.snapPoint = { ...firstPoint }
         state.previewWall = null
         state.cursorState = 'idle'
@@ -226,30 +298,17 @@ export function initPointer(draw, { newWallId } = {}) {
         clearPulse()
       }
 
-      // B по текущей позиции
       const raw = screenToWorld(draw, e.clientX, e.clientY)
-      const p = snapAt(raw, firstPoint)
-
-      const len = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
-      const okLen = len >= MIN_WALL_LEN
-
-      const okAllowed = isSegmentAllowed(firstPoint, p)
-      const okClear = isSegmentClearOfCapitals(firstPoint, p, DRAW_CLEAR)
-      const ok = okLen && okAllowed && okClear
-
-      state.cursorState = ok ? 'valid' : 'invalid'
-      state.previewWall = { a: firstPoint, b: p, ok }
-
+      applyDrawPreview(raw)
       scheduleRender()
       return
     }
 
-    // ✅ MOUSE: обновляем курсор всегда
+    // MOUSE
     const raw = screenToWorld(draw, e.clientX, e.clientY)
-    const p = snapAt(raw, firstPoint)
-    state.snapPoint = p
 
     if (!firstPoint) {
+      state.snapPoint = snapAt(raw, null)
       state.cursorState = 'idle'
       state.previewWall = null
       if (suppressPreview) suppressPreview = false
@@ -265,16 +324,7 @@ export function initPointer(draw, { newWallId } = {}) {
       return
     }
 
-    const len = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
-    const okLen = len >= MIN_WALL_LEN
-
-    const okAllowed = isSegmentAllowed(firstPoint, p)
-    const okClear = isSegmentClearOfCapitals(firstPoint, p, DRAW_CLEAR)
-    const ok = okLen && okAllowed && okClear
-
-    state.cursorState = ok ? 'valid' : 'invalid'
-    state.previewWall = { a: firstPoint, b: p, ok }
-
+    applyDrawPreview(raw)
     scheduleRender()
   }, { passive: false })
 
@@ -287,7 +337,7 @@ export function initPointer(draw, { newWallId } = {}) {
     down = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType }
     draw.node.setPointerCapture?.(e.pointerId)
 
-    // ✅ TOUCH / PEN / COARSE: только запоминаем старт, ничего не рисуем
+    // TOUCH / PEN / COARSE: просто запоминаем старт
     if (isTouchLikePointer(e.pointerType)) {
       const raw0 = screenToWorld(draw, e.clientX, e.clientY)
       const p0 = snapAt(raw0, null)
@@ -302,7 +352,7 @@ export function initPointer(draw, { newWallId } = {}) {
       return
     }
 
-    // ✅ MOUSE: ставим курсор в точку клика (а не в центр)
+    // MOUSE: курсор в точку клика
     const raw = screenToWorld(draw, e.clientX, e.clientY)
     state.snapPoint = snapAt(raw, null)
     state.cursorState = 'idle'
@@ -318,7 +368,7 @@ export function initPointer(draw, { newWallId } = {}) {
     const wasDown = down
     down = null
 
-    // ✅ TOUCH / PEN / COARSE
+    // TOUCH / PEN / COARSE
     if (isTouchLikePointer(e.pointerType)) {
       const dragging = touchDragging && firstPoint
       const preview = state.previewWall
@@ -326,7 +376,6 @@ export function initPointer(draw, { newWallId } = {}) {
       touchPending = null
       touchDragging = false
 
-      // tap (drag не начался) → игнор, ничего не ставим
       if (!dragging || !preview) {
         firstPoint = null
         state.previewWall = null
@@ -337,28 +386,27 @@ export function initPointer(draw, { newWallId } = {}) {
         return
       }
 
-      const p = { ...preview.b }
+      const pFinal = { ...preview.b }
 
-      // ✅ min length
-      const len = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
+      const len = Math.hypot(pFinal.x - firstPoint.x, pFinal.y - firstPoint.y)
       if (len < MIN_WALL_LEN) {
         resetAll()
         return
       }
 
-      const okAllowed = isSegmentAllowed(firstPoint, p)
-      const okClear = isSegmentClearOfCapitals(firstPoint, p, DRAW_CLEAR)
+      const okAllowed = allowedDraw(firstPoint, pFinal)
+      const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, DRAW_CLEAR)
       if (!(okAllowed && okClear)) {
         resetAll()
         return
       }
 
       const id = (typeof newWallId === 'function') ? newWallId() : `u${Date.now()}`
-      const newWall = { id, a: { ...firstPoint }, b: { ...p }, kind: 'normal' }
+      const newWall = { id, a: { ...firstPoint }, b: { ...pFinal }, kind: 'normal' }
 
       trimWallToCapitals(newWall)
 
-      const okAllowed2 = isSegmentAllowed(newWall.a, newWall.b)
+      const okAllowed2 = allowedDraw(newWall.a, newWall.b)
       const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, DRAW_CLEAR)
       if (!(okAllowed2 && okClear2)) {
         resetAll()
@@ -371,21 +419,21 @@ export function initPointer(draw, { newWallId } = {}) {
       return
     }
 
-    // ✅ MOUSE (A/B click)
+    // MOUSE (A/B click)
     const isTap =
       wasDown
         ? distPx({ x: e.clientX, y: e.clientY }, { x: wasDown.x, y: wasDown.y }) <= TAP_THRESH_PX
         : true
 
     const raw = screenToWorld(draw, e.clientX, e.clientY)
-    const p = snapAt(raw, firstPoint)
-    state.snapPoint = p
+    const pSnap = snapAt(raw, firstPoint)
 
     // 1) choose A
     if (!firstPoint) {
-      firstPoint = { ...p }
+      firstPoint = { ...pSnap }
+      state.snapPoint = { ...pSnap }
       state.cursorState = 'valid'
-      state.previewWall = { a: firstPoint, b: p, ok: true }
+      state.previewWall = { a: firstPoint, b: pSnap, ok: true }
       suppressPreview = false
       scheduleRender()
       return
@@ -394,36 +442,45 @@ export function initPointer(draw, { newWallId } = {}) {
     // 2) cancel if click near A
     if (isTap) {
       const tolWorld = CANCEL_A_PX / Math.max(1e-6, state.view.scale)
-      const dWorld = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
+      const dWorld = Math.hypot(pSnap.x - firstPoint.x, pSnap.y - firstPoint.y)
       if (dWorld <= tolWorld) {
         cancelStart()
         return
       }
     }
 
-    // ✅ min length
-    const len = Math.hypot(p.x - firstPoint.x, p.y - firstPoint.y)
+    // ✅ финальная точка стены (с T-обрубкой)
+    const tolWorld = config.snap.draw.snapPx / Math.max(1e-6, state.view.scale)
+    const pFinal = clampBToFirstNormalIntersection(firstPoint, pSnap, {
+      tolWorld,
+      guardT: config.snap.tGuard,
+    })
+
+    // ✅ курсор остаётся на pSnap (не залипает)
+    state.snapPoint = { ...pSnap }
+
+    const len = Math.hypot(pFinal.x - firstPoint.x, pFinal.y - firstPoint.y)
     if (len < MIN_WALL_LEN) {
-      cancelInvalidB(p, e.pointerType)
+      cancelInvalidB(pSnap, e.pointerType)
       return
     }
 
-    const okAllowed = isSegmentAllowed(firstPoint, p)
-    const okClear = isSegmentClearOfCapitals(firstPoint, p, DRAW_CLEAR)
+    const okAllowed = allowedDraw(firstPoint, pFinal)
+    const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, DRAW_CLEAR)
     if (!(okAllowed && okClear)) {
-      cancelInvalidB(p, e.pointerType)
+      cancelInvalidB(pSnap, e.pointerType)
       return
     }
 
     const id = (typeof newWallId === 'function') ? newWallId() : `u${Date.now()}`
-    const newWall = { id, a: { ...firstPoint }, b: { ...p }, kind: 'normal' }
+    const newWall = { id, a: { ...firstPoint }, b: { ...pFinal }, kind: 'normal' }
 
     trimWallToCapitals(newWall)
 
-    const okAllowed2 = isSegmentAllowed(newWall.a, newWall.b)
+    const okAllowed2 = allowedDraw(newWall.a, newWall.b)
     const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, DRAW_CLEAR)
     if (!(okAllowed2 && okClear2)) {
-      cancelInvalidB(p, e.pointerType)
+      cancelInvalidB(pSnap, e.pointerType)
       return
     }
 
@@ -433,7 +490,7 @@ export function initPointer(draw, { newWallId } = {}) {
     // after commit
     firstPoint = null
     state.previewWall = null
-    state.snapPoint = { ...p }
+    state.snapPoint = { ...pFinal } // логично оставить последнюю “реальную” точку
     state.cursorState = 'idle'
     suppressPreview = false
     clearPulse()
