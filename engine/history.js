@@ -13,21 +13,32 @@ function deepClone(obj) {
     return JSON.parse(JSON.stringify(obj))
 }
 
-// ✅ что именно откатываем (геометрия)
 function snapshot() {
-    return deepClone({
-        walls: state.walls || [],
-        doors: state.doors || [],
-        windows: state.windows || [],
-    })
+  return deepClone({
+    walls: state.walls || [],
+    doors: state.doors || [],
+    windows: state.windows || [],
+
+    // ✅ мебель + выделение мебели
+    furniture: state.furniture || [],
+    selectedFurnitureId: state.selectedFurnitureId ?? null,
+  })
 }
 
 function applySnapshot(snap) {
-    state.walls = deepClone(snap?.walls || [])
-    state.doors = deepClone(snap?.doors || [])
-    state.windows = deepClone(snap?.windows || [])
-}
+  state.walls = deepClone(snap?.walls || [])
+  state.doors = deepClone(snap?.doors || [])
+  state.windows = deepClone(snap?.windows || [])
 
+  // ✅ мебель
+  state.furniture = deepClone(snap?.furniture || [])
+  state.selectedFurnitureId = snap?.selectedFurnitureId ?? null
+
+  // ✅ сброс transient UI
+  state.hoverFurnitureId = null
+  state.previewFurniture = null
+  state.draftFurnitureTypeId = null
+}
 function sameSnap(a, b) {
     return JSON.stringify(a) === JSON.stringify(b)
 }

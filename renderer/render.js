@@ -41,16 +41,15 @@ function unitNormal(a, b) {
   return { nx: -dy / len, ny: dx / len }
 }
 
-function ensureTraceRectMatchesCaps(walls) {
-  const bb = getCapitalBBox(walls)
-  if (!bb) return null
-
-  const pad = 0 // можешь поставить 50..150 world если надо поля
+function rotatePointAround(px, py, cx, cy, deg) {
+  const a = (deg * Math.PI) / 180
+  const s = Math.sin(a)
+  const c = Math.cos(a)
+  const x = px - cx
+  const y = py - cy
   return {
-    x: bb.minX - pad,
-    y: bb.minY - pad,
-    w: (bb.maxX - bb.minX) + pad * 2,
-    h: (bb.maxY - bb.minY) + pad * 2,
+    x: cx + x * c - y * s,
+    y: cy + x * s + y * c,
   }
 }
 
@@ -114,7 +113,6 @@ function getCapitalsCentroid(walls) {
   const caps = walls.filter(w => w.kind === 'capital')
   if (!caps.length) return { x: 0, y: 0 }
 
-  // берём точки a (у тебя капы идут кольцом, этого достаточно)
   let sx = 0, sy = 0, n = 0
   for (const w of caps) {
     sx += w.a.x
@@ -126,20 +124,18 @@ function getCapitalsCentroid(walls) {
 
 /**
  * Возвращает нормаль (nx, ny), направленную НАРУЖУ относительно centroid.
- * Логика: если шаг по нормали приближает к центру — это внутрь, значит надо перевернуть.
  */
 function outwardNormal(a, b, centroid) {
   const { nx, ny } = unitNormal(a, b)
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
 
-  const eps = 1 // маленький шаг в world
+  const eps = 1
   const p1 = { x: mid.x + nx * eps, y: mid.y + ny * eps }
   const p2 = { x: mid.x - nx * eps, y: mid.y - ny * eps }
 
   const d1 = Math.hypot(p1.x - centroid.x, p1.y - centroid.y)
   const d2 = Math.hypot(p2.x - centroid.x, p2.y - centroid.y)
 
-  // если p1 ближе к центру — нормаль смотрит внутрь, переворачиваем
   return d1 < d2 ? { nx: -nx, ny: -ny } : { nx, ny }
 }
 
@@ -152,7 +148,6 @@ let cache = null
 function ensureScene(draw) {
   if (cache && cache.draw === draw) return cache
 
-  // не чистим каждый кадр, создаём один раз
   const scene = draw.group().id('scene')
   const gridG = scene.group().id('grid')
   const traceG = scene.group().id('trace')
@@ -180,8 +175,6 @@ function ensureScene(draw) {
 }
 
 export function render(draw) {
-  // ⚠️ лучше вызывать это при изменении капиталок/шаблона, а не каждый render,
-  // но оставляю как у тебя пока.
   ensureCapitalInnerFaces()
 
   const { scene, traceG, wallsG, dimsG, overlayG } = ensureScene(draw)
@@ -212,7 +205,6 @@ export function render(draw) {
   const caps = walls.filter(w => w.kind === 'capital')
   const normals = walls.filter(w => w.kind !== 'capital')
 
-
   // 1) CAPITAL
   for (const w of caps) {
     wallsG
@@ -226,10 +218,10 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-  // ---- WINDOWS (only init, only capital) ----
+  // ---- WINDOWS (only capital) ----
   const windows = state.windows || []
   if (windows.length) {
-    const capCentroid = getCapitalsCentroid(walls) // уже есть у тебя ниже, можно оставить локально тут
+    const capCentroid = getCapitalsCentroid(walls)
     for (const win of windows) {
       const wall = caps.find(x => x.id === win.wallId)
       if (!wall) continue
@@ -253,7 +245,7 @@ export function render(draw) {
       const p1 = { x: cx - ux * half, y: cy - uy * half }
       const p2 = { x: cx + ux * half, y: cy + uy * half }
 
-      // наружная нормаль (чтобы слегка вынести проём наружу)
+      // outward offset
       const { nx, ny } = outwardNormal(a, b, capCentroid)
       const out = (config.windows.outwardOffsetWorld ?? 2) * invScale
 
@@ -262,7 +254,6 @@ export function render(draw) {
 
       const thick = (win.thick ?? (CAP_W * (config.windows.thickMulOfCap ?? 0.65)))
 
-      // "стекло"
       overlayG
         .line(q1.x, q1.y, q2.x, q2.y)
         .stroke({
@@ -274,7 +265,6 @@ export function render(draw) {
         })
         .attr({ 'pointer-events': 'none' })
 
-      // обводка
       overlayG
         .line(q1.x, q1.y, q2.x, q2.y)
         .stroke({
@@ -318,7 +308,7 @@ export function render(draw) {
       .attr({ 'pointer-events': 'none' })
   }
 
-  // HIT lines (separate pass) — stable click area in px
+  // HIT lines — stable click area in px
   for (const w of normals) {
     if (!w.id) continue
 
@@ -364,9 +354,8 @@ export function render(draw) {
     }
   }
 
-  // ---- DOORS (after walls) ----
+  // ---- DOORS ----
   const doors = state.doors || []
-
   for (const d of doors) {
     const isDoorSelected = d.id && d.id === state.selectedDoorId
     const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
@@ -393,7 +382,6 @@ export function render(draw) {
     const doorW = d.w ?? defaultW
     const thick = d.thick ?? NOR_W
 
-
     const cx = a.x + (b.x - a.x) * t
     const cy = a.y + (b.y - a.y) * t
 
@@ -407,7 +395,6 @@ export function render(draw) {
     const p1 = { x: cx - ux * half, y: cy - uy * half }
     const p2 = { x: cx + ux * half, y: cy + uy * half }
 
-    // видимая “вставка” двери
     overlayG
       .line(p1.x, p1.y, p2.x, p2.y)
       .stroke({
@@ -419,8 +406,7 @@ export function render(draw) {
       })
       .attr({ 'pointer-events': 'none' })
 
-    // кликабельность только для interior (entry вообще не кликается)
-    // кликабельность только для interior (entry вообще не кликается)
+    // hit only for interior
     if (d.kind === 'interior' && !d.locked) {
       overlayG
         .line(p1.x, p1.y, p2.x, p2.y)
@@ -470,7 +456,89 @@ export function render(draw) {
     }
   }
 
-  // 4) selected highlight + handles
+  // ---- FURNITURE (draw after doors so it's on top) ----
+  const furniture = state.furniture || []
+  for (const f of furniture) {
+    const isSel = f.id === state.selectedFurnitureId
+    const isHover = !isSel && f.id === state.hoverFurnitureId
+    const opacity = isHover ? 0.92 : 1
+
+    const sym = draw.defs().findOne(`#${f.symbolId}`)
+    if (!sym) continue
+
+    // symbol (visible)
+    overlayG
+      .use(sym)
+      .size(f.w, f.h)
+      .center(f.x, f.y)
+      .rotate(f.rot || 0, f.x, f.y)
+      .attr({ 'pointer-events': 'none', opacity })
+
+    // hit rect
+    overlayG
+      .rect(f.w, f.h)
+      .center(f.x, f.y)
+      .rotate(f.rot || 0, f.x, f.y)
+      .fill({ color: '#000', opacity: 0 })
+      .attr({
+        'pointer-events': 'all',
+        'data-furniture-id': f.id,
+      })
+
+    // selection outline + rotate handle
+    if (isSel) {
+      overlayG
+        .rect(f.w, f.h)
+        .center(f.x, f.y)
+        .rotate(f.rot || 0, f.x, f.y)
+        .fill({ color: '#000', opacity: 0 })
+        .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.8 })
+        .attr({ 'pointer-events': 'none' })
+
+      const off = (Math.max(f.w, f.h) / 2) + (30 * invScale)
+      const h0 = rotatePointAround(f.x, f.y - off, f.x, f.y, f.rot || 0)
+
+      overlayG
+        .line(f.x, f.y, h0.x, h0.y)
+        .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.6 })
+        .attr({ 'pointer-events': 'none' })
+
+      overlayG
+        .circle(18 * invScale)
+        .center(h0.x, h0.y)
+        .fill('#fff')
+        .stroke({ width: 2 * invScale, color: config.theme.wall.selected })
+        .attr({
+          'pointer-events': 'all',
+          'data-furniture-rotate': f.id,
+        })
+    }
+  }
+
+  // ---- PREVIEW FURNITURE ----
+  if (state.mode === 'draw-furniture' && state.previewFurniture) {
+    const pf = state.previewFurniture
+    const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
+
+    if (sym) {
+      overlayG
+        .use(sym)
+        .size(pf.w, pf.h)
+        .center(pf.x, pf.y)
+        .rotate(pf.rot || 0, pf.x, pf.y)
+        .attr({ 'pointer-events': 'none', opacity: 0.7 })
+    }
+
+    overlayG
+      .rect(pf.w, pf.h)
+      .center(pf.x, pf.y)
+      .rotate(pf.rot || 0, pf.x, pf.y)
+      .fill({ color: '#000', opacity: 0 })
+      .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.7, dasharray: '10 8' })
+      .attr({ 'pointer-events': 'none' })
+  }
+
+  // 4) selected wall highlight + handles (walls)
   if (state.selectedWallId) {
     const w = normals.find(x => x.id === state.selectedWallId)
     if (w) {
@@ -512,7 +580,7 @@ export function render(draw) {
       const PULSE_MS = config.render.snapPulseMs
       if (dt < PULSE_MS) {
         const k = dt / PULSE_MS
-        const r = (6 + 10 * k) * invScale // (если хочешь — тоже в config)
+        const r = (6 + 10 * k) * invScale
         const opacity = 0.55 * (1 - k)
 
         overlayG
@@ -543,7 +611,7 @@ export function render(draw) {
     const posA = w.a
     const posB = w.b
 
-    // длина — по строительной геометрии
+    // length by "construction geometry"
     let lenA, lenB
     if (w.kind !== 'capital') {
       lenA = w.va || w.a
@@ -557,13 +625,12 @@ export function render(draw) {
     const lenM = unitsToMeters(lenUnits)
     const txt = formatMeters(lenM)
 
-    // позиция подписи — по ВИДИМОЙ геометрии (posA/posB)
     const mid = midPoint(posA, posB)
     const ang = readableRotation(angleDeg(posA, posB))
 
     let nx, ny
     if (w.kind === 'capital') {
-      ({ nx, ny } = outwardNormal(posA, posB, capCentroid)) // наружу
+      ({ nx, ny } = outwardNormal(posA, posB, capCentroid))
     } else {
       ({ nx, ny } = unitNormal(posA, posB))
     }
@@ -575,6 +642,7 @@ export function render(draw) {
       (w.kind === 'capital')
         ? (CAP_W / 2) + offCapExtraPx
         : offNormalPx
+
     const lx = mid.x + nx * offsetFromWall
     const ly = mid.y + ny * offsetFromWall
 
@@ -604,10 +672,9 @@ export function render(draw) {
     g.rotate(ang, lx, ly)
   }
 
-  // 2) "inside box" label (Коробка: W × H м) — управляется из config.render.boxLabel
+  // "inside box" label
   {
     const box = config.render?.boxLabel || { enabled: true }
-
     if (box.enabled) {
       const bb = getCapitalBBox(walls)
       if (bb) {
@@ -616,7 +683,6 @@ export function render(draw) {
 
         const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
 
-        // ВАЖНО: эти значения в PX → делаем стабильными на зуме через invScale
         const fontSize2 = (box.fontPx ?? 13) * invScale
         const pad2 = (box.padPx ?? 4) * invScale
         const rx = (box.radiusPx ?? 6) * invScale
@@ -664,14 +730,10 @@ export function render(draw) {
 
   // ---------- CURSOR DOT ----------
   if (state.mode === 'draw-wall') {
-    // ✅ курсор = КОНЕЦ previewWall, если он есть (чтобы совпадал с пунктиром)
-    // иначе = snapPoint (когда previewWall ещё не создан)
+    // курсор = конец previewWall если есть, иначе snapPoint
     const p = state.previewWall?.b || state.snapPoint
-
     if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
-      // ✅ цвет/состояние лучше брать из previewWall.ok (если есть)
       const ok = state.previewWall ? !!state.previewWall.ok : (state.cursorState !== 'invalid')
-
       const color = ok ? config.theme.wall.selected : config.theme.cursor.invalid
 
       const r = 6 * invScale
@@ -701,18 +763,11 @@ export function render(draw) {
   roomsG.clear()
   roomsG.attr({ 'pointer-events': 'none' })
 
-  // ✅ НЕТ “комнат” — НЕ рисуем числа вообще
-  // (коробка одна — это не комната для тебя)
+  // нет комнат — не рисуем
   if (rooms.length <= 1) return
 
-  // иначе убираем внешнюю грань (самую большую)
   const maxArea = Math.max(...rooms.map(r => r.areaM2))
   const roomsToDraw = rooms.filter(r => r.areaM2 < maxArea - 1e-6)
-
-  // ... дальше твой код отрисовки roomsToDraw как сейчас
-  if (!roomsG) roomsG = overlayG.group().id('room-labels')
-  roomsG.clear()
-  roomsG.attr({ 'pointer-events': 'none' })
 
   const roomsFontPx = config.render?.rooms?.fontPx ?? 14
   const fontWorld = roomsFontPx * invScale
@@ -727,7 +782,6 @@ export function render(draw) {
         weight: 700,
       })
       .fill(config.theme.rooms.text)
-
 
     txt.attr({
       'paint-order': 'stroke',

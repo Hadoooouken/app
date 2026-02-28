@@ -303,6 +303,14 @@ export const config = {
             // strokeWidth = fontWorld * strokeMul
             strokeMul: 0.25,
         },
+
+        furniture: {
+            // 0..2 обычно норм, чтобы почти вплотную
+            clearToCapWorld: 0,    // см от внутренней грани капитальной
+            clearToNorWorld: 2,    // см от normal стены (осевой линии с учетом NOR_W/2)
+            // если хочешь "утопать" в капитальную стену на 5-10см:
+            sinkIntoCapWorld: 8,   // см
+        },
     },
 }
 

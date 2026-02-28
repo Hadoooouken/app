@@ -384,6 +384,23 @@ button,
     opacity 0.3s ease;
 }
 
+.fmenu {
+  position: absolute;
+  top: 70px;
+  left: 20px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 10px;
+  width: 260px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  z-index: 50;
+}
+.fmenu.is-hidden { display: none; }
+.fmenu__cat { font-weight: 700; margin: 8px 0; }
+.fmenu__item { display:flex; justify-content:space-between; padding:6px 8px; border-radius:8px; cursor:pointer; }
+.fmenu__item:hover { background:#f3f5f7; }
+
 @media (hover: hover) {
   .dpad__btn:hover {
     filter: brightness(0.96);

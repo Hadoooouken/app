@@ -149,7 +149,7 @@ export function loadStudioTemplate() {
       thick: CAP_W,
       locked: true,
     },
-        {
+    {
       id: did(),
       kind: 'entry',
       wallId: capMidHLL.id, // w3

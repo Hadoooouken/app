@@ -7,7 +7,7 @@ export const state = {
   // geometry
   walls: [],
   doors: [],
-  windows: [], 
+  windows: [],
 
   // selection / hover
   selectedWallId: null,
@@ -27,19 +27,21 @@ export const state = {
   ui: { dragged: false, lockPan: false, snapPulse: null },
   snapPoint: null,
 
-  // ✅ TRACE (режим обводки по картинке, скрытый)
-  // trace: {
-  //   active: false,
-  //   imageHref: '', // путь к jpg
-  //   rectWorld: { x: 0, y: 0, w: 1200, h: 600 }, // в world
-  //   points: [], // массив {x,y}
-  // },
   trace: {
     active: true,
     imageHref: '../planner/assets/plan.jpg', // путь ОТ index.html (или от страницы, где открыт проект)
     rectWorld: { x: 0, y: 0, w: 2000, h: 1200 }, // размеры в WORLD
     points: [],
   },
+
+  furniture: [],
+
+  selectedFurnitureId: null,
+  hoverFurnitureId: null,
+
+  // режим постановки мебели
+  previewFurniture: null,      // { typeId, x, y, rot }
+  draftFurnitureTypeId: null,  // выбранный тип из меню
 }
 
 // ---------------- helpers ----------------
@@ -106,7 +108,7 @@ export function loadOneRoomTemplate() {
       kind: 'entry',
       wallId: capBottom, // ✅ привязка к капитальной
       t: 0.2,
-      w: 90,             
+      w: 90,
       thick: CAP_W,      // как капитальная, чтобы красиво
       locked: true,      // UI/interaction игнорит locked
     },
