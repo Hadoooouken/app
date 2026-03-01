@@ -99,6 +99,33 @@ function furnitureCorners({ x, y, w, h, rot }) {
   })
 }
 
+function getViewportCenterWorld() {
+  const r = draw.node.getBoundingClientRect()
+  return screenToWorld(draw, r.left + r.width / 2, r.top + r.height / 2)
+}
+
+function spawnFurniturePreviewAtCenter() {
+  const typeId = state.draftFurnitureTypeId
+  const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
+  if (!meta) return
+
+  const c = getViewportCenterWorld()
+  const sp = snapFurniturePoint(c)
+
+  const next = {
+    typeId,
+    symbolId: meta.symbolId,
+    w: meta.w,
+    h: meta.h,
+    x: sp.x,
+    y: sp.y,
+    rot: 0,
+  }
+  next.ok = furnitureAllowed(next)
+
+  state.previewFurniture = next
+  scheduleRerender()
+}
 
 function setPlannerCursor(cursor) {
   draw.node.style.cursor = cursor
@@ -118,6 +145,7 @@ let furnAutoId = 1
 const newFurnitureId = () => `f${Date.now()}_${furnAutoId++}`
 
 let furnitureEdit = null
+let furniturePlace = null // { pointerId }
 // { id, kind:'move'|'rotate', startMouse, startX, startY, startRot, startAngle }
 
 function snapFurniturePoint(raw) {
@@ -221,10 +249,10 @@ function buildFurnitureMenu() {
       row.innerHTML = `<span>${it.label}</span><span>${(it.w / 100).toFixed(2)}×${(it.h / 100).toFixed(2)}м</span>`
 
       row.addEventListener('click', () => {
-        // выбран тип → переходим в режим постановки
         state.draftFurnitureTypeId = it.typeId
         setMode('draw-furniture')
         hideFurnitureMenu()
+        spawnFurniturePreviewAtCenter() // ✅ сразу появится превью
       })
 
       furnMenu.appendChild(row)
@@ -552,10 +580,12 @@ function furnitureAllowed(pose) {
   const corners = rectCorners(pose.x, pose.y, pose.w, pose.h, pose.rot || 0)
   for (const p of corners) if (!pointInPoly(p, poly)) return false
 
-const furnCfg = config.furniture || {}
-const clearCap = furnCfg.clearToCapWorld ?? 0
-const clearNor = furnCfg.clearToNorWorld ?? 4
-const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
+  // ✅ берём правила мебели в одном месте (и совместимо со старым theme.furniture)
+  const furnCfg = config.furniture || config.theme?.furniture || {}
+  const clearCap = furnCfg.clearToCapWorld ?? 0
+  const clearNor = furnCfg.clearToNorWorld ?? 0
+  const sinkCap  = furnCfg.sinkIntoCapWorld ?? 0
+  const sinkNor  = furnCfg.sinkIntoNorWorld ?? 0
 
   const walls = state.walls || []
   const rectEdges = [
@@ -565,7 +595,6 @@ const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
     [corners[3], corners[0]],
   ]
 
-  const CAP_R = config.walls.CAP_W / 2
   const NOR_R = config.walls.NOR_W / 2
 
   for (const w of walls) {
@@ -573,18 +602,25 @@ const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
     const b = (w.kind === 'capital') ? (w.ib || w.b) : (w.vb || w.b)
     if (!a || !b) continue
 
+    // ✅ capital: ia/ib — это внутренняя грань, поэтому CAP_R тут НЕ нужен
     const wallR =
       (w.kind === 'capital')
-        ? Math.max(0, CAP_R + clearCap - sinkCap)
-        : Math.max(0, NOR_R + clearNor)
+        ? Math.max(0, clearCap - sinkCap)
+        : Math.max(0, NOR_R + clearNor - sinkNor)
 
-    if (wallR <= 0) continue
-
-    // ✅ если стенка “оказалась внутри” мебели — это коллизия
-    if (segmentInsideRotRect(a, b, pose)) return false
-
+    // ✅ запрет “проталкивания” всегда, даже если wallR = 0
+    // стенка внутри прямоугольника мебели
+    if (pointInRotRect(a, pose) || pointInRotRect(b, pose) || segmentInsideRotRect(a, b, pose)) return false
+    // пересечение стенки с ребром мебели
     for (const [p1, p2] of rectEdges) {
-      if (segMinDistance(p1, p2, a, b) < wallR) return false
+      if (segIntersect(p1, p2, a, b)) return false
+    }
+
+    // ✅ зазор только если он реально задан
+    if (wallR > 0) {
+      for (const [p1, p2] of rectEdges) {
+        if (segMinDistance(p1, p2, a, b) < wallR) return false
+      }
     }
   }
 
@@ -735,6 +771,12 @@ function updateStatus() {
 
 // ---------------- mode helpers ----------------
 function setMode(mode) {
+  // в начале или в конце setMode
+if (mode !== 'draw-furniture') {
+  furniturePlace = null
+  state.ui ??= {}
+  state.ui.lockPan = false
+}
   state.mode = mode
   state.previewWall = null
   state.draft = null
@@ -1474,7 +1516,7 @@ draw.node.addEventListener('pointerdown', (e) => {
   // block non-left mouse buttons (for mouse)
   if (state.mode === 'draw-wall') return
   if (e.button !== 0 && e.pointerType === 'mouse') return
-  if (state.ui?.dragged) return
+  if (state.ui?.dragged && state.mode !== 'draw-furniture') return
 
   const p = screenToWorld(draw, e.clientX, e.clientY)
 
@@ -1508,38 +1550,42 @@ draw.node.addEventListener('pointerdown', (e) => {
     return
   }
 
-  // --- furniture: place new (only in draw-furniture, only if click was not on existing furniture) ---
+  // --- furniture: place new ---
   if (state.mode === 'draw-furniture') {
     const typeId = state.draftFurnitureTypeId
     const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
     const pf = state.previewFurniture
 
-    // ✅ нельзя ставить если превью нет или оно "invalid"
-    if (!meta || !pf || pf.ok === false) {
+    // 🖱️ mouse: клик = поставить
+    if (e.pointerType === 'mouse') {
+      if (!meta || !pf || pf.ok === false) return
+      historyCommit('add-furniture')
+      state.furniture ??= []
+      state.furniture.push({
+        id: newFurnitureId(),
+        typeId,
+        symbolId: meta.symbolId,
+        w: meta.w,
+        h: meta.h,
+        x: pf.x,
+        y: pf.y,
+        rot: 0,
+      })
+      scheduleRerender()
       return
     }
 
-    const id = newFurnitureId()
-    historyCommit('add-furniture')
+    // 📱 touch: начать placement (добавление будет в pointerup)
+    if (!meta) return
+    e.preventDefault()
+    draw.node.setPointerCapture?.(e.pointerId)
 
-    state.furniture = state.furniture || []
-    state.furniture.push({
-      id,
-      typeId,
-      symbolId: meta.symbolId,
-      w: meta.w,
-      h: meta.h,
-      x: pf.x,
-      y: pf.y,
-      rot: 0,
-    })
+    furniturePlace = { pointerId: e.pointerId }
+    state.ui ??= {}
+    state.ui.lockPan = true
 
-    // опционально: НЕ выделять сразу при постановке, чтобы не мешало ставить дальше
-    // state.selectedFurnitureId = id
-
-    state.selectedWallId = null
-    state.selectedDoorId = null
-
+    const p = screenToWorld(draw, e.clientX, e.clientY)
+    updateFurniturePreviewAtPoint(p)
     scheduleRerender()
     return
   }
@@ -1593,6 +1639,15 @@ draw.node.addEventListener('pointerdown', (e) => {
 
 draw.node.addEventListener('pointermove', (e) => {
   const p = screenToWorld(draw, e.clientX, e.clientY)
+
+  // ✅ если тащим превью для постановки (touch)
+  if (furniturePlace && furniturePlace.pointerId === e.pointerId) {
+    updateFurniturePreviewAtPoint(p)
+    // scheduleRerender() можно не звать — updateFurniturePreviewAtPoint сам вызывает,
+    // но оставить не страшно
+  
+    return
+  }
 
   // ✅ 0.5) мебель: drag/rotate — СНАЧАЛА
   if (furnitureEdit) {
@@ -1659,6 +1714,37 @@ draw.node.addEventListener('pointermove', (e) => {
 })
 
 draw.node.addEventListener('pointerup', (e) => {
+  // ✅ finish furniture placement (touch)
+  if (furniturePlace && furniturePlace.pointerId === e.pointerId) {
+    draw.node.releasePointerCapture?.(e.pointerId)
+    furniturePlace = null
+
+    state.ui ??= {}
+    state.ui.lockPan = false
+
+    const typeId = state.draftFurnitureTypeId
+    const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
+    const pf = state.previewFurniture
+
+    // ставим только если валидно
+    if (meta && pf && pf.ok !== false) {
+      historyCommit('add-furniture')
+      state.furniture ??= []
+      state.furniture.push({
+        id: newFurnitureId(),
+        typeId,
+        symbolId: meta.symbolId,
+        w: meta.w,
+        h: meta.h,
+        x: pf.x,
+        y: pf.y,
+        rot: pf.rot || 0,
+      })
+    }
+
+    scheduleRerender()
+    return
+  }
   // если ставили дверь — отпускаем capture
   if (doorPlace && doorPlace.pointerId === e.pointerId) {
     draw.node.releasePointerCapture?.(e.pointerId)
@@ -1685,7 +1771,17 @@ draw.node.addEventListener('pointerup', (e) => {
   scheduleRerender()
 })
 
-draw.node.addEventListener('pointercancel', () => {
+draw.node.addEventListener('pointercancel', (e) => {
+  // ✅ cancel furniture placement
+  if (furniturePlace && furniturePlace.pointerId === e.pointerId) {
+    draw.node.releasePointerCapture?.(e.pointerId)
+    furniturePlace = null
+    state.ui ??= {}
+    state.ui.lockPan = false
+    scheduleRerender()
+    return
+  }
+
   if (furnitureEdit) {
     stopFurnitureEdit()
     scheduleRerender()
