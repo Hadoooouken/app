@@ -22,7 +22,10 @@ import {
   capitalAreaM2,
   fmtM,
   fmtM2,
+  getCapitalPolygon as getOuterCapPolygon
 } from '../engine/metrics.js'
+
+
 
 const GRID_STEP_SNAP = config.grid.snapStep
 const NOR_W = config.walls.NOR_W
@@ -38,8 +41,7 @@ const DOOR_W_ENTRY = config.doors?.defaultEntryW ?? 90
 
 const DOOR_NUDGE_WORLD = config.doors?.nudgeStepWorld ?? config.grid.snapStep
 
-const FURN_SINK_INTO_CAP_W = config.furniture?.sinkIntoCapW ?? 10 // world units (см)
-const FURN_EXTRA_GAP_W = config.furniture?.gapToCapW ?? 0         // доп. зазор (см)
+
 
 const workspace = document.getElementById('workspace')
 const draw = createSVG(workspace)
@@ -97,38 +99,6 @@ function furnitureCorners({ x, y, w, h, rot }) {
   })
 }
 
-// ✅ проверка: все углы мебели должны быть "внутри" капитальных с учётом утопления
-function isFurnitureAllowedInCaps(f) {
-  const caps = (state.walls || []).filter(w => w.kind === 'capital')
-  if (!caps.length) return true
-
-  const centroid = getCapitalsCentroid(caps)
-
-  // минимальная дистанция от ОСИ капитальной до угла мебели (внутрь помещения)
-  // inner-face ≈ CAP_W/2. sink уменьшает ограничение => можно ближе.
-  const minDist = Math.max(
-    0,
-    (config.walls.CAP_W / 2) + FURN_GAP_TO_CAP_W - FURN_SINK_INTO_CAP_W
-  )
-
-  const corners = furnitureCorners(f)
-
-  // для прямоугольной/выпуклой "коробки" это ок
-  for (const p of corners) {
-    for (const w of caps) {
-      const a = w.a, b = w.b
-      const out = outwardNormal(a, b, centroid)
-      const inN = { nx: -out.nx, ny: -out.ny } // внутрь
-
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-      const signed = (p.x - mid.x) * inN.nx + (p.y - mid.y) * inN.ny
-
-      if (signed < minDist) return false
-    }
-  }
-
-  return true
-}
 
 function setPlannerCursor(cursor) {
   draw.node.style.cursor = cursor
@@ -440,18 +410,46 @@ function findWallIdFromEventTarget(target) {
 }
 
 // ---------------- FURNITURE: bounds & collision ----------------
-const FURN_CLEAR = config.furniture?.clearFromWallsWorld ?? 4 // world units (см)
+
 
 function getInnerCapsPolygon() {
   ensureCapitalInnerFaces()
+
   const caps = (state.walls || []).filter(w => w.kind === 'capital')
   if (!caps.length) return null
 
-  // caps идут кольцом → берём по одной точке на ребро (ia)
-  const poly = caps.map(w => w.ia || w.a).filter(Boolean)
-  return poly.length >= 3 ? poly : null
-}
+  // bbox по капитальным (для fallback и для проверки "внешности")
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const w of caps) {
+    const a = w.ia || w.a
+    const b = w.ib || w.b
+    minX = Math.min(minX, a.x, b.x)
+    minY = Math.min(minY, a.y, b.y)
+    maxX = Math.max(maxX, a.x, b.x)
+    maxY = Math.max(maxY, a.y, b.y)
+  }
 
+  // ✅ пробуем внешний контур
+  const poly = getOuterCapPolygon()
+  if (poly && poly.length >= 3) {
+    // проверка: внешний контур обязан содержать "экстремальные" точки bbox
+    const tol = 1e-6
+    const hasMinX = poly.some(p => Math.abs(p.x - minX) <= tol)
+    const hasMaxX = poly.some(p => Math.abs(p.x - maxX) <= tol)
+    const hasMinY = poly.some(p => Math.abs(p.y - minY) <= tol)
+    const hasMaxY = poly.some(p => Math.abs(p.y - maxY) <= tol)
+
+    if (hasMinX && hasMaxX && hasMinY && hasMaxY) return poly
+    // иначе это “не внешний” цикл (ушли по внутренней ветке) → fallback bbox
+  }
+
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ]
+}
 function pointInPoly(pt, poly) {
   // ray casting
   let inside = false
@@ -485,6 +483,25 @@ function rectCorners(x, y, w, h, rotDeg = 0) {
     x: x + p.x * c - p.y * s,
     y: y + p.x * s + p.y * c,
   }))
+}
+
+function pointInRotRect(p, pose) {
+  const ang = -((pose.rot || 0) * Math.PI) / 180
+  const c = Math.cos(ang), s = Math.sin(ang)
+  const dx = p.x - pose.x
+  const dy = p.y - pose.y
+  const lx = dx * c - dy * s
+  const ly = dx * s + dy * c
+  return Math.abs(lx) <= pose.w / 2 && Math.abs(ly) <= pose.h / 2
+}
+
+function segmentInsideRotRect(a, b, pose) {
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  return (
+    pointInRotRect(a, pose) ||
+    pointInRotRect(b, pose) ||
+    pointInRotRect(mid, pose)
+  )
 }
 
 function segIntersect(a, b, c, d) {
@@ -528,23 +545,18 @@ function segMinDistance(a, b, c, d) {
   )
 }
 
-const clearCap = config.furniture?.clearToCapWorld ?? 0   // зазор от ВНУТР. грани капитальной
-const clearNor = config.furniture?.clearToNorWorld ?? 4   // зазор от normal стены
-const sinkCap = config.furniture?.sinkIntoCapWorld ?? 0  // сколько можно "утопить" в капиталку
-
 function furnitureAllowed(pose) {
   const poly = getInnerCapsPolygon()
-  // если нет капитальных стен — не ограничиваем
   if (!poly) return true
 
   const corners = rectCorners(pose.x, pose.y, pose.w, pose.h, pose.rot || 0)
+  for (const p of corners) if (!pointInPoly(p, poly)) return false
 
-  // 1) углы должны быть внутри внутреннего контура капиталок
-  for (const p of corners) {
-    if (!pointInPoly(p, poly)) return false
-  }
+const furnCfg = config.furniture || {}
+const clearCap = furnCfg.clearToCapWorld ?? 0
+const clearNor = furnCfg.clearToNorWorld ?? 4
+const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
 
-  // 2) не пересекаться и не “топиться” в стены (кап+нормал)
   const walls = state.walls || []
   const rectEdges = [
     [corners[0], corners[1]],
@@ -553,27 +565,31 @@ function furnitureAllowed(pose) {
     [corners[3], corners[0]],
   ]
 
+  const CAP_R = config.walls.CAP_W / 2
+  const NOR_R = config.walls.NOR_W / 2
+
   for (const w of walls) {
-    const a = (w.kind === 'capital' ? (w.ia || w.a) : w.a)
-    const b = (w.kind === 'capital' ? (w.ib || w.b) : w.b)
+    const a = (w.kind === 'capital') ? (w.ia || w.a) : (w.va || w.a)
+    const b = (w.kind === 'capital') ? (w.ib || w.b) : (w.vb || w.b)
     if (!a || !b) continue
 
-    // ✅ расстояние до "запрещенной зоны"
-const wallR =
-  (w.kind === 'capital')
-    ? Math.max(0, clearCap - sinkCap)
-    : Math.max(0, (config.walls.NOR_W / 2) + clearNor)
+    const wallR =
+      (w.kind === 'capital')
+        ? Math.max(0, CAP_R + clearCap - sinkCap)
+        : Math.max(0, NOR_R + clearNor)
 
-    if (wallR > 0) {
-      for (const [p1, p2] of rectEdges) {
-        if (segMinDistance(p1, p2, a, b) < wallR) return false
-      }
+    if (wallR <= 0) continue
+
+    // ✅ если стенка “оказалась внутри” мебели — это коллизия
+    if (segmentInsideRotRect(a, b, pose)) return false
+
+    for (const [p1, p2] of rectEdges) {
+      if (segMinDistance(p1, p2, a, b) < wallR) return false
     }
   }
 
   return true
 }
-
 function findDoorIdFromEventTarget(target) {
   let el = target
   while (el && el !== draw.node) {
@@ -902,13 +918,14 @@ function applyFurnitureEdit(mouseWorld) {
   if (furnitureEdit.kind === 'move') {
     const dx = mouseWorld.x - furnitureEdit.startMouse.x
     const dy = mouseWorld.y - furnitureEdit.startMouse.y
-    const raw = { x: furnitureEdit.startX + dx, y: furnitureEdit.startY + dy }
-    const sp = snapFurniturePoint(raw)
 
-    const cand = { ...f, x: sp.x, y: sp.y }
+    // ✅ ПЛАВНО: без snap во время drag
+    const raw = { x: furnitureEdit.startX + dx, y: furnitureEdit.startY + dy }
+    const cand = { ...f, x: raw.x, y: raw.y }
+
     if (furnitureAllowed(cand)) {
-      f.x = sp.x
-      f.y = sp.y
+      f.x = raw.x
+      f.y = raw.y
     }
     return
   }
@@ -928,6 +945,18 @@ function applyFurnitureEdit(mouseWorld) {
 
 function stopFurnitureEdit() {
   if (!furnitureEdit) return
+
+  // ✅ SNAP только в конце (и только если после снапа всё ещё можно)
+  const f = getFurnitureById(furnitureEdit.id)
+  if (f) {
+    const sp = snapFurniturePoint({ x: f.x, y: f.y })
+    const cand = { ...f, x: sp.x, y: sp.y }
+    if (furnitureAllowed(cand)) {
+      f.x = sp.x
+      f.y = sp.y
+    }
+  }
+
   furnitureEdit = null
   state.ui = state.ui || {}
   state.ui.lockPan = false

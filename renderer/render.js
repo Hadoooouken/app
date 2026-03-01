@@ -515,28 +515,35 @@ export function render(draw) {
     }
   }
 
-  // ---- PREVIEW FURNITURE ----
-  if (state.mode === 'draw-furniture' && state.previewFurniture) {
-    const pf = state.previewFurniture
-    const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
+ // ---- PREVIEW FURNITURE ----
+if (state.mode === 'draw-furniture' && state.previewFurniture) {
+  const pf = state.previewFurniture
+  const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
 
-    if (sym) {
-      overlayG
-        .use(sym)
-        .size(pf.w, pf.h)
-        .center(pf.x, pf.y)
-        .rotate(pf.rot || 0, pf.x, pf.y)
-        .attr({ 'pointer-events': 'none', opacity: 0.7 })
-    }
+  const ok = pf.ok !== false
 
+  // как рисовать
+  const op = ok ? 0.85 : 0.22
+  const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
+  const dash = ok ? '10 8' : '6 8'
+
+  if (sym) {
     overlayG
-      .rect(pf.w, pf.h)
+      .use(sym)
+      .size(pf.w, pf.h)
       .center(pf.x, pf.y)
       .rotate(pf.rot || 0, pf.x, pf.y)
-      .fill({ color: '#000', opacity: 0 })
-      .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.7, dasharray: '10 8' })
-      .attr({ 'pointer-events': 'none' })
+      .attr({ 'pointer-events': 'none', opacity: op })
   }
+
+  overlayG
+    .rect(pf.w, pf.h)
+    .center(pf.x, pf.y)
+    .rotate(pf.rot || 0, pf.x, pf.y)
+    .fill({ color: '#000', opacity: 0 })
+    .stroke({ width: 2 * invScale, color: strokeColor, opacity: 0.9, dasharray: dash })
+    .attr({ 'pointer-events': 'none' })
+}
 
   // 4) selected wall highlight + handles (walls)
   if (state.selectedWallId) {

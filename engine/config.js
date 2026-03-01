@@ -78,6 +78,10 @@ export const config = {
         // Обычно удобно = шагу магнита (grid.snapStep), но можно отдельно.
         nudgeStepWorld: 25,
     },
+
+    // -------------------------
+    // WINDOWS
+    // -------------------------
     windows: {
         // стандартное окно 1.0м (world units, у тебя cm → 100)
         defaultW: 100,
@@ -92,6 +96,22 @@ export const config = {
         // небольшой вынос от оси капитальной наружу (в world units)
         // чтобы читалось как проём на стене
         outwardOffsetWorld: 2,
+    },
+
+    // -------------------------
+    // FURNITURE (rules / constraints)
+    // -------------------------
+    furniture: {
+        // отступ от ВНУТРЕННЕЙ грани капитальной (см)
+        clearToCapWorld: 0,
+
+        // отступ от ОСИ normal стены (см)
+        // (в app.js ты добавляешь NOR_W/2 отдельно)
+        clearToNorWorld: 2,
+
+        // насколько можно "утопить" мебель в капитальную (см)
+        // 0 = вообще не топим
+        sinkIntoCapWorld: 8,
     },
 
     // -------------------------
@@ -191,16 +211,16 @@ export const config = {
             padPx: 3,
 
             offsetNormalPx: 14,
-            offsetCapitalExtraPx: 14
+            offsetCapitalExtraPx: 14,
         },
 
         // Плашка “Коробка: W × H м” (можно выключать)
         boxLabel: {
-            enabled: true,  // false = вообще не рисуем
-            fontPx: 13,     // px
-            padPx: 4,       // px
-            radiusPx: 6,    // px
-            offsetPx: 70,   // px (насколько вверх от верхней границы коробки)
+            enabled: true, // false = вообще не рисуем
+            fontPx: 13, // px
+            padPx: 4, // px
+            radiusPx: 6, // px
+            offsetPx: 70, // px (насколько вверх от верхней границы коробки)
             bgOpacity: 0.9, // прозрачность фона
         },
 
@@ -302,14 +322,6 @@ export const config = {
             // Относительная толщина обводки:
             // strokeWidth = fontWorld * strokeMul
             strokeMul: 0.25,
-        },
-
-        furniture: {
-            // 0..2 обычно норм, чтобы почти вплотную
-            clearToCapWorld: 0,    // см от внутренней грани капитальной
-            clearToNorWorld: 2,    // см от normal стены (осевой линии с учетом NOR_W/2)
-            // если хочешь "утопать" в капитальную стену на 5-10см:
-            sinkIntoCapWorld: 8,   // см
         },
     },
 }
