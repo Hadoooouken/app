@@ -652,6 +652,7 @@ function segMinDistance(a, b, c, d) {
 
 //   return true
 // }
+
 function findDoorIdFromEventTarget(target) {
   let el = target
   while (el && el !== draw.node) {
@@ -1689,32 +1690,42 @@ draw.node.addEventListener('pointerdown', (e) => {
     }
   }
 
-  // --- wall handle ---
-  const h =
-    typeof pickWallHandleAt === 'function'
-      ? pickWallHandleAt(p, { tolPx: PICK_HANDLE_PX })
-      : null
+// --- wall handle ---
+const h =
+  typeof pickWallHandleAt === 'function'
+    ? pickWallHandleAt(p, { tolPx: HANDLE_TOL_PX })
+    : null
 
-  if (h) {
-    state.selectedWallId = h.id
-    state.selectedDoorId = null
-    state.selectedFurnitureId = null
-    startEdit(h.handle, h.id, p)
-    scheduleRerender()
-    return
-  }
+if (h) {
+  state.selectedWallId = h.id
+  state.selectedDoorId = null
+  state.selectedFurnitureId = null
+  startEdit(h.handle, h.id, p)
+  scheduleRerender()
+  return
+}
 
-  // --- wall body ---
-  const wid = pickNormalWallAt(p, { tolPx: PICK_WALL_PX })
-  if (wid) {
-    state.selectedWallId = wid
-    state.selectedDoorId = null
-    state.selectedFurnitureId = null
-    startEdit('move', wid, p)
-    scheduleRerender()
-    return
-  }
+// --- wall by DOM target (особенно важно на touch) ---
+const wallIdFromTarget = findWallIdFromEventTarget(e.target)
+if (wallIdFromTarget) {
+  state.selectedWallId = wallIdFromTarget
+  state.selectedDoorId = null
+  state.selectedFurnitureId = null
+  startEdit('move', wallIdFromTarget, p)
+  scheduleRerender()
+  return
+}
 
+// --- wall body ---
+const wid = pickNormalWallAt(p, { tolPx: WALL_TOL_PX })
+if (wid) {
+  state.selectedWallId = wid
+  state.selectedDoorId = null
+  state.selectedFurnitureId = null
+  startEdit('move', wid, p)
+  scheduleRerender()
+  return
+}
   // --- empty click: clear selections ---
   state.selectedWallId = null
   state.selectedDoorId = null
