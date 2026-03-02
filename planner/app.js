@@ -104,13 +104,12 @@ function getViewportCenterWorld() {
   return screenToWorld(draw, r.left + r.width / 2, r.top + r.height / 2)
 }
 
-function spawnFurniturePreviewAtCenter() {
+function spawnFurniturePreviewAtPoint(worldPoint) {
   const typeId = state.draftFurnitureTypeId
   const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
   if (!meta) return
 
-  const c = getViewportCenterWorld()
-  const sp = snapFurniturePoint(c)
+  const sp = snapFurniturePoint(worldPoint, { toGrid: false }) // свободно
 
   const next = {
     typeId,
@@ -126,6 +125,7 @@ function spawnFurniturePreviewAtCenter() {
   state.previewFurniture = next
   scheduleRerender()
 }
+
 
 function setPlannerCursor(cursor) {
   draw.node.style.cursor = cursor
@@ -147,13 +147,41 @@ const newFurnitureId = () => `f${Date.now()}_${furnAutoId++}`
 let furnitureEdit = null
 let furniturePlace = null // { pointerId }
 // { id, kind:'move'|'rotate', startMouse, startX, startY, startRot, startAngle }
+let lastPointerWorld = null
 
-function snapFurniturePoint(raw) {
+function snapAngleDeg(deg, {
+  step = 45,     // шаг якорей: 45 => 0,45,90...
+  eps = 4,       // допуск в градусах: 4 => 86..94 прилипнет к 90
+  only = null,   // массив якорей, если хочешь только [0,135,...]
+} = {}) {
+  const norm = ((deg % 360) + 360) % 360
+
+  // режим "только к конкретным"
+  if (Array.isArray(only) && only.length) {
+    let best = null
+    let bestD = Infinity
+    for (const a of only) {
+      const aa = ((a % 360) + 360) % 360
+      // расстояние по окружности
+      const d = Math.min(Math.abs(norm - aa), 360 - Math.abs(norm - aa))
+      if (d < bestD) { bestD = d; best = aa }
+    }
+    return bestD <= eps ? best : norm
+  }
+
+  // режим "кратно step"
+  const nearest = Math.round(norm / step) * step
+  const snapped = ((nearest % 360) + 360) % 360
+  const d = Math.min(Math.abs(norm - snapped), 360 - Math.abs(norm - snapped))
+  return d <= eps ? snapped : norm
+}
+
+function snapFurniturePoint(raw, { toGrid = true } = {}) {
   return smartSnapPoint(raw, null, {
     grid: config.grid.snapStep,
     snapPx: config.snap.draw.snapPx,
     axisPx: config.snap.draw.axisPx,
-    toGrid: true,
+    toGrid,              // ✅ управляем
     toPoints: false,
     toAxis: false,
     toCapital: false,
@@ -176,7 +204,7 @@ function updateFurniturePreviewAtPoint(p) {
   const meta = FURN_BY_TYPE.get(typeId)
   if (!meta) return
 
-  const sp = snapFurniturePoint(p)
+  const sp = snapFurniturePoint(p, { toGrid: false }) // ✅ ВОТ ТУТ
 
   const next = {
     typeId,
@@ -189,8 +217,6 @@ function updateFurniturePreviewAtPoint(p) {
   }
 
   next.ok = furnitureAllowed(next)
-
-  // удобно: показываем “можно/нельзя” курсором
   setPlannerCursor(next.ok ? 'pointer' : 'not-allowed')
 
   const prev = state.previewFurniture
@@ -206,7 +232,6 @@ function updateFurniturePreviewAtPoint(p) {
     scheduleRerender()
   }
 }
-
 const btnWall = document.getElementById('btn-wall')
 const btnTrash = document.getElementById('btn-trash')
 const btnDoor = document.getElementById('btn-door')
@@ -252,7 +277,8 @@ function buildFurnitureMenu() {
         state.draftFurnitureTypeId = it.typeId
         setMode('draw-furniture')
         hideFurnitureMenu()
-        spawnFurniturePreviewAtCenter() // ✅ сразу появится превью
+        const p0 = lastPointerWorld || getViewportCenterWorld()
+        spawnFurniturePreviewAtPoint(p0) // ✅ сразу под курсором (или центр если курсора нет)
       })
 
       furnMenu.appendChild(row)
@@ -584,8 +610,8 @@ function furnitureAllowed(pose) {
   const furnCfg = config.furniture || config.theme?.furniture || {}
   const clearCap = furnCfg.clearToCapWorld ?? 0
   const clearNor = furnCfg.clearToNorWorld ?? 0
-  const sinkCap  = furnCfg.sinkIntoCapWorld ?? 0
-  const sinkNor  = furnCfg.sinkIntoNorWorld ?? 0
+  const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
+  const sinkNor = furnCfg.sinkIntoNorWorld ?? 0
 
   const walls = state.walls || []
   const rectEdges = [
@@ -772,11 +798,11 @@ function updateStatus() {
 // ---------------- mode helpers ----------------
 function setMode(mode) {
   // в начале или в конце setMode
-if (mode !== 'draw-furniture') {
-  furniturePlace = null
-  state.ui ??= {}
-  state.ui.lockPan = false
-}
+  if (mode !== 'draw-furniture') {
+    furniturePlace = null
+    state.ui ??= {}
+    state.ui.lockPan = false
+  }
   state.mode = mode
   state.previewWall = null
   state.draft = null
@@ -940,16 +966,24 @@ function startFurnitureRotate(id, mouseWorld) {
   if (!f) return
 
   historyBegin('rotate-furniture')
-  state.ui = state.ui || {}
+  state.ui ||= {}
   state.ui.lockPan = true
 
   const ang = Math.atan2(mouseWorld.y - f.y, mouseWorld.x - f.x)
+
   furnitureEdit = {
     id,
     kind: 'rotate',
-    startRot: f.rot || 0,
-    startAngle: ang,
+    lastAngle: ang,        // ✅ угол прошлого кадра
+    rotRaw: f.rot || 0,    // ✅ “сырое” вращение, которое копим
   }
+}
+
+
+function wrapRadPi(x) {
+  while (x > Math.PI) x -= 2 * Math.PI
+  while (x < -Math.PI) x += 2 * Math.PI
+  return x
 }
 
 function applyFurnitureEdit(mouseWorld) {
@@ -957,31 +991,47 @@ function applyFurnitureEdit(mouseWorld) {
   const f = getFurnitureById(furnitureEdit.id)
   if (!f) return
 
+  // --- MOVE ---
   if (furnitureEdit.kind === 'move') {
     const dx = mouseWorld.x - furnitureEdit.startMouse.x
     const dy = mouseWorld.y - furnitureEdit.startMouse.y
 
-    // ✅ ПЛАВНО: без snap во время drag
-    const raw = { x: furnitureEdit.startX + dx, y: furnitureEdit.startY + dy }
-    const cand = { ...f, x: raw.x, y: raw.y }
+    const nx = furnitureEdit.startX + dx
+    const ny = furnitureEdit.startY + dy
+
+    // хочешь во время drag без сетки — так лучше (снэп сделаем в stopFurnitureEdit)
+    const cand = { ...f, x: nx, y: ny }
 
     if (furnitureAllowed(cand)) {
-      f.x = raw.x
-      f.y = raw.y
+      f.x = nx
+      f.y = ny
     }
     return
   }
 
+  // --- ROTATE ---
   if (furnitureEdit.kind === 'rotate') {
-    const a = Math.atan2(mouseWorld.y - f.y, mouseWorld.x - f.x)
-    const da = a - furnitureEdit.startAngle
-    let deg = (furnitureEdit.startRot || 0) + (da * 180) / Math.PI
-    deg = ((deg % 360) + 360) % 360
+    const dx = mouseWorld.x - f.x
+    const dy = mouseWorld.y - f.y
 
-    const cand = { ...f, rot: deg }
-    if (furnitureAllowed(cand)) {
-      f.rot = deg
-    }
+    const r = Math.hypot(dx, dy)
+    const MIN_R = 40
+    if (r < MIN_R) return
+
+    const a = Math.atan2(dy, dx)
+
+    let dA = a - furnitureEdit.lastAngle
+    dA = wrapRadPi(dA)
+    furnitureEdit.lastAngle = a
+
+    furnitureEdit.rotRaw += (dA * 180) / Math.PI
+
+    const norm = ((furnitureEdit.rotRaw % 360) + 360) % 360
+    const snapped = snapAngleDeg(norm, { step: 45, eps: 9 })
+
+    const cand = { ...f, rot: snapped }
+    if (furnitureAllowed(cand)) f.rot = snapped
+    return
   }
 }
 
@@ -1559,10 +1609,13 @@ draw.node.addEventListener('pointerdown', (e) => {
     // 🖱️ mouse: клик = поставить
     if (e.pointerType === 'mouse') {
       if (!meta || !pf || pf.ok === false) return
+
       historyCommit('add-furniture')
       state.furniture ??= []
+
+      const newId = newFurnitureId()
       state.furniture.push({
-        id: newFurnitureId(),
+        id: newId,
         typeId,
         symbolId: meta.symbolId,
         w: meta.w,
@@ -1571,6 +1624,10 @@ draw.node.addEventListener('pointerdown', (e) => {
         y: pf.y,
         rot: 0,
       })
+
+      // ✅ после постановки — select
+      state.selectedFurnitureId = newId
+      setMode('idle') // сбросит preview/draft и выйдет из draw-furniture
       scheduleRerender()
       return
     }
@@ -1639,13 +1696,14 @@ draw.node.addEventListener('pointerdown', (e) => {
 
 draw.node.addEventListener('pointermove', (e) => {
   const p = screenToWorld(draw, e.clientX, e.clientY)
+  lastPointerWorld = p
 
   // ✅ если тащим превью для постановки (touch)
   if (furniturePlace && furniturePlace.pointerId === e.pointerId) {
     updateFurniturePreviewAtPoint(p)
     // scheduleRerender() можно не звать — updateFurniturePreviewAtPoint сам вызывает,
     // но оставить не страшно
-  
+
     return
   }
 
@@ -1730,8 +1788,10 @@ draw.node.addEventListener('pointerup', (e) => {
     if (meta && pf && pf.ok !== false) {
       historyCommit('add-furniture')
       state.furniture ??= []
+
+      const newId = newFurnitureId()
       state.furniture.push({
-        id: newFurnitureId(),
+        id: newId,
         typeId,
         symbolId: meta.symbolId,
         w: meta.w,
@@ -1740,6 +1800,10 @@ draw.node.addEventListener('pointerup', (e) => {
         y: pf.y,
         rot: pf.rot || 0,
       })
+
+      // ✅ после постановки — select
+      state.selectedFurnitureId = newId
+      setMode('idle')
     }
 
     scheduleRerender()

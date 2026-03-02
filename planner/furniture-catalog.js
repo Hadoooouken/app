@@ -6,6 +6,8 @@ export const FURN_CATEGORIES = [
         items: [
             { typeId: 'sofa', label: 'Диван', symbolId: 'divan', w: 200, h: 90 },
             { typeId: 'bed', label: 'Кровать', symbolId: 'f-sofa', w: 200, h: 160 },
+            { typeId: 'frameTest', label: 'Рамка', symbolId: 'frame', w: 200, h: 100 },
+             { typeId: 'icon-corel-test', label: 'лалала', symbolId: 'icon-corel', w: 200, h: 100 }
 
         ],
     },
