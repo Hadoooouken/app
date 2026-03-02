@@ -652,17 +652,17 @@ function segMinDistance(a, b, c, d) {
 
 //   return true
 // }
-// function findDoorIdFromEventTarget(target) {
-//   let el = target
-//   while (el && el !== draw.node) {
-//     if (el.getAttribute) {
-//       const id = el.getAttribute('data-door-id')
-//       if (id) return id
-//     }
-//     el = el.parentNode
-//   }
-//   return null
-// }
+function findDoorIdFromEventTarget(target) {
+  let el = target
+  while (el && el !== draw.node) {
+    if (el.getAttribute) {
+      const id = el.getAttribute('data-door-id')
+      if (id) return id
+    }
+    el = el.parentNode
+  }
+  return null
+}
 
 function furnitureAllowed(pose) {
   const poly = getInnerCapsPolygon()
@@ -819,64 +819,70 @@ function updateStatus() {
 
 // ---------------- mode helpers ----------------
 function setMode(mode) {
-  // в начале или в конце setMode
-  if (mode !== 'draw-furniture') {
-    furniturePlace = null
-    state.ui ??= {}
-    state.ui.lockPan = false
-  }
-  state.mode = mode
-  state.previewWall = null
-  state.draft = null
-  state.edit = null
+  const prev = state.mode
 
-  state.ui = state.ui || {}
-  state.ui.lockPan = false
+  // ui всегда должен существовать
+  state.ui ??= {}
 
+  // ✅ КРИТИЧНО: если dragged остался true после панорамирования —
+  // pointerdown в idle будет игнориться (у тебя стоит guard).
+  state.ui.dragged = false
 
-  if (mode === 'draw-wall') {
+  // ✅ при смене режима — сбрасываем выделения/ховер, чтобы не "залипало"
+  if (mode !== prev) {
     state.selectedWallId = null
     state.selectedDoorId = null
+    state.selectedFurnitureId = null
+
     state.hoverWallId = null
-    state.snapPoint = null
-    state.cursorState = 'idle'
-  } else {
-    state.cursorState = 'idle'
-    state.snapPoint = null
+    state.hoverDoorId = null
+    state.hoverFurnitureId = null
+  }
+
+  // ✅ если выходим из режима постановки мебели — отменяем touch placement
+  if (prev === 'draw-furniture' && mode !== 'draw-furniture') {
+    furniturePlace = null
+  }
+
+  // ✅ общий сброс интеракций/превью
+  state.mode = mode
+  state.previewWall = null
+  state.previewDoor = null
+  state.previewFurniture = null
+  state.draft = null
+  state.edit = null
+  state.snapPoint = null
+  state.cursorState = 'idle'
+
+  // ✅ по умолчанию панорамирование разрешено (lockPan = false)
+  state.ui.lockPan = false
+
+  // ✅ режимы рисования: чистим несовместимые штуки
+  if (mode === 'draw-wall') {
+    // стены рисуем — двери/мебель не выделяем
+    state.selectedDoorId = null
+    state.selectedFurnitureId = null
   }
 
   if (mode === 'draw-door') {
     state.selectedWallId = null
-    state.selectedDoorId = null
-    state.hoverWallId = null
-    state.previewDoor = null
-  }
-  if (mode !== 'draw-door') {
-    state.previewDoor = null
+    state.selectedFurnitureId = null
   }
 
   if (mode === 'draw-furniture') {
     state.selectedWallId = null
     state.selectedDoorId = null
-    state.selectedFurnitureId = null
-    state.hoverWallId = null
-    state.hoverDoorId = null
-    state.hoverFurnitureId = null
-    state.previewDoor = null
-    state.previewWall = null
-    state.previewFurniture = null
-    state.cursorState = 'idle'
-  }
-  if (mode !== 'draw-furniture') {
-    state.previewFurniture = null
+    // draftFurnitureTypeId НЕ трогаем — он задаётся меню
+  } else {
+    // ✅ выходим из мебели — убираем меню и сбрасываем выбор типа
     hideFurnitureMenu()
     state.draftFurnitureTypeId = null
   }
+
   setPlannerCursor('default')
   syncUI()
   rerender()
 }
-
 function syncUI() {
   const isWall = state.mode === 'draw-wall'
   const isDoor = state.mode === 'draw-door'
@@ -1048,7 +1054,7 @@ function applyFurnitureEdit(mouseWorld) {
     furnitureEdit.rotRaw += (dA * 180) / Math.PI
 
     const norm = ((furnitureEdit.rotRaw % 360) + 360) % 360
-    //сила магнита при прокрутке 
+    //сила магнита при прокрутке мебели
     const snapped = snapAngleDeg(norm, { step: 45, eps: 6 })
 
     const cand = { ...f, rot: snapped }
