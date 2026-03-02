@@ -599,69 +599,91 @@ function segMinDistance(a, b, c, d) {
   )
 }
 
+// function furnitureAllowed(pose) {
+//   const poly = getInnerCapsPolygon()
+//   if (!poly) return true
+
+//   const corners = rectCorners(pose.x, pose.y, pose.w, pose.h, pose.rot || 0)
+//   for (const p of corners) if (!pointInPoly(p, poly)) return false
+
+//   // ✅ берём правила мебели в одном месте (и совместимо со старым theme.furniture)
+//   const furnCfg = config.furniture || config.theme?.furniture || {}
+//   const clearCap = furnCfg.clearToCapWorld ?? 0
+//   const clearNor = furnCfg.clearToNorWorld ?? 0
+//   const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
+//   const sinkNor = furnCfg.sinkIntoNorWorld ?? 0
+
+//   const walls = state.walls || []
+//   const rectEdges = [
+//     [corners[0], corners[1]],
+//     [corners[1], corners[2]],
+//     [corners[2], corners[3]],
+//     [corners[3], corners[0]],
+//   ]
+
+//   const NOR_R = config.walls.NOR_W / 2
+
+//   for (const w of walls) {
+//     const a = (w.kind === 'capital') ? (w.ia || w.a) : (w.va || w.a)
+//     const b = (w.kind === 'capital') ? (w.ib || w.b) : (w.vb || w.b)
+//     if (!a || !b) continue
+
+//     // ✅ capital: ia/ib — это внутренняя грань, поэтому CAP_R тут НЕ нужен
+//     const wallR =
+//       (w.kind === 'capital')
+//         ? Math.max(0, clearCap - sinkCap)
+//         : Math.max(0, NOR_R + clearNor - sinkNor)
+
+//     // ✅ запрет “проталкивания” всегда, даже если wallR = 0
+//     // стенка внутри прямоугольника мебели
+//     if (pointInRotRect(a, pose) || pointInRotRect(b, pose) || segmentInsideRotRect(a, b, pose)) return false
+//     // пересечение стенки с ребром мебели
+//     for (const [p1, p2] of rectEdges) {
+//       if (segIntersect(p1, p2, a, b)) return false
+//     }
+
+//     // ✅ зазор только если он реально задан
+//     if (wallR > 0) {
+//       for (const [p1, p2] of rectEdges) {
+//         if (segMinDistance(p1, p2, a, b) < wallR) return false
+//       }
+//     }
+//   }
+
+//   return true
+// }
+// function findDoorIdFromEventTarget(target) {
+//   let el = target
+//   while (el && el !== draw.node) {
+//     if (el.getAttribute) {
+//       const id = el.getAttribute('data-door-id')
+//       if (id) return id
+//     }
+//     el = el.parentNode
+//   }
+//   return null
+// }
+
 function furnitureAllowed(pose) {
   const poly = getInnerCapsPolygon()
   if (!poly) return true
 
-  const corners = rectCorners(pose.x, pose.y, pose.w, pose.h, pose.rot || 0)
-  for (const p of corners) if (!pointInPoly(p, poly)) return false
+  // углы мебели
+  const corners = rectCorners(
+    pose.x,
+    pose.y,
+    pose.w,
+    pose.h,
+    pose.rot || 0
+  )
 
-  // ✅ берём правила мебели в одном месте (и совместимо со старым theme.furniture)
-  const furnCfg = config.furniture || config.theme?.furniture || {}
-  const clearCap = furnCfg.clearToCapWorld ?? 0
-  const clearNor = furnCfg.clearToNorWorld ?? 0
-  const sinkCap = furnCfg.sinkIntoCapWorld ?? 0
-  const sinkNor = furnCfg.sinkIntoNorWorld ?? 0
-
-  const walls = state.walls || []
-  const rectEdges = [
-    [corners[0], corners[1]],
-    [corners[1], corners[2]],
-    [corners[2], corners[3]],
-    [corners[3], corners[0]],
-  ]
-
-  const NOR_R = config.walls.NOR_W / 2
-
-  for (const w of walls) {
-    const a = (w.kind === 'capital') ? (w.ia || w.a) : (w.va || w.a)
-    const b = (w.kind === 'capital') ? (w.ib || w.b) : (w.vb || w.b)
-    if (!a || !b) continue
-
-    // ✅ capital: ia/ib — это внутренняя грань, поэтому CAP_R тут НЕ нужен
-    const wallR =
-      (w.kind === 'capital')
-        ? Math.max(0, clearCap - sinkCap)
-        : Math.max(0, NOR_R + clearNor - sinkNor)
-
-    // ✅ запрет “проталкивания” всегда, даже если wallR = 0
-    // стенка внутри прямоугольника мебели
-    if (pointInRotRect(a, pose) || pointInRotRect(b, pose) || segmentInsideRotRect(a, b, pose)) return false
-    // пересечение стенки с ребром мебели
-    for (const [p1, p2] of rectEdges) {
-      if (segIntersect(p1, p2, a, b)) return false
-    }
-
-    // ✅ зазор только если он реально задан
-    if (wallR > 0) {
-      for (const [p1, p2] of rectEdges) {
-        if (segMinDistance(p1, p2, a, b) < wallR) return false
-      }
-    }
+  // ❗ единственное ограничение:
+  // все углы должны быть внутри полигона капитальных стен
+  for (const p of corners) {
+    if (!pointInPoly(p, poly)) return false
   }
 
   return true
-}
-function findDoorIdFromEventTarget(target) {
-  let el = target
-  while (el && el !== draw.node) {
-    if (el.getAttribute) {
-      const id = el.getAttribute('data-door-id')
-      if (id) return id
-    }
-    el = el.parentNode
-  }
-  return null
 }
 
 function findFurnitureIdFromEventTarget(target) {
@@ -991,20 +1013,19 @@ function applyFurnitureEdit(mouseWorld) {
   const f = getFurnitureById(furnitureEdit.id)
   if (!f) return
 
-  // --- MOVE ---
   if (furnitureEdit.kind === 'move') {
     const dx = mouseWorld.x - furnitureEdit.startMouse.x
     const dy = mouseWorld.y - furnitureEdit.startMouse.y
 
-    const nx = furnitureEdit.startX + dx
-    const ny = furnitureEdit.startY + dy
-
-    // хочешь во время drag без сетки — так лучше (снэп сделаем в stopFurnitureEdit)
-    const cand = { ...f, x: nx, y: ny }
+    const cand = {
+      ...f,
+      x: furnitureEdit.startX + dx,
+      y: furnitureEdit.startY + dy,
+    }
 
     if (furnitureAllowed(cand)) {
-      f.x = nx
-      f.y = ny
+      f.x = cand.x
+      f.y = cand.y
     }
     return
   }
@@ -1027,7 +1048,8 @@ function applyFurnitureEdit(mouseWorld) {
     furnitureEdit.rotRaw += (dA * 180) / Math.PI
 
     const norm = ((furnitureEdit.rotRaw % 360) + 360) % 360
-    const snapped = snapAngleDeg(norm, { step: 45, eps: 9 })
+    //сила магнита при прокрутке 
+    const snapped = snapAngleDeg(norm, { step: 45, eps: 6 })
 
     const cand = { ...f, rot: snapped }
     if (furnitureAllowed(cand)) f.rot = snapped
@@ -1038,10 +1060,10 @@ function applyFurnitureEdit(mouseWorld) {
 function stopFurnitureEdit() {
   if (!furnitureEdit) return
 
-  // ✅ SNAP только в конце (и только если после снапа всё ещё можно)
+  // если хочешь вообще без снапа — этот блок можно убрать целиком
   const f = getFurnitureById(furnitureEdit.id)
   if (f) {
-    const sp = snapFurniturePoint({ x: f.x, y: f.y })
+    const sp = snapFurniturePoint({ x: f.x, y: f.y }, { toGrid: false })
     const cand = { ...f, x: sp.x, y: sp.y }
     if (furnitureAllowed(cand)) {
       f.x = sp.x
@@ -1050,7 +1072,7 @@ function stopFurnitureEdit() {
   }
 
   furnitureEdit = null
-  state.ui = state.ui || {}
+  state.ui ??= {}
   state.ui.lockPan = false
   historyEnd()
 }
