@@ -133,6 +133,9 @@ function setPlannerCursor(cursor) {
 
 // coarse = мобилки/планшеты (для допусков/UX), НЕ ДЛЯ отключения hover
 const isTouchLike = matchMedia('(pointer: coarse)').matches
+// толерансы под мобилку (coarse pointer) — увеличиваем "попадание"
+const WALL_TOL_PX   = isTouchLike ? Math.round(PICK_WALL_PX * 2.5)   : PICK_WALL_PX
+const HANDLE_TOL_PX = isTouchLike ? Math.round(PICK_HANDLE_PX * 2.5) : PICK_HANDLE_PX
 
 // -------- id generator for user walls --------
 let wallAutoId = 10000
