@@ -351,8 +351,8 @@ function initWindowsFromTemplate() {
       (typeof wdef.w === 'number')
         ? wdef.w
         : (wdef.kind === 'balcony'
-            ? (config.windows.balconyW ?? 180)
-            : (config.windows.defaultW ?? 100))
+          ? (config.windows.balconyW ?? 180)
+          : (config.windows.defaultW ?? 100))
 
     const dx = wall.b.x - wall.a.x
     const dy = wall.b.y - wall.a.y

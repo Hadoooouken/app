@@ -269,6 +269,10 @@ export const config = {
             // Дополнительная толщина normal стены при hover/selected (world units)
             hoverExtraW: 2,
             selectedExtraW: 4,
+
+        },
+        canvas: {
+            bg: '#F2EEE5',
         },
 
         door: {

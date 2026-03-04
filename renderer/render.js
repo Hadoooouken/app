@@ -26,6 +26,23 @@ function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
+const ERASE_EXTRA_PX = 2 // запас в пикселях
+
+function eraseUnderOpening(g, p1, p2, wallThick, invScale) {
+  const extra = ERASE_EXTRA_PX * invScale
+  const bg = config.theme.canvas?.bg ?? '#fff' // если забудешь — не сломается
+
+  g.line(p1.x, p1.y, p2.x, p2.y)
+    .stroke({
+      width: wallThick + extra,
+      color: bg,
+      linecap: 'butt',
+      linejoin: 'miter',
+      opacity: 1,
+    })
+    .attr({ 'pointer-events': 'none' })
+}
+
 function doorAngleRightDown(a, b) {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -380,6 +397,7 @@ export function render(draw) {
           : 'furniture-window'
 
       const sym = draw.defs().findOne(`#${symbolId}`)
+      eraseUnderOpening(overlayG, q1, q2, CAP_W, invScale)
       if (sym) {
         const ang = angleDeg(a, b)
 
@@ -550,6 +568,8 @@ export function render(draw) {
 
     // ✅ угол двери "вправо/вниз" (единый стиль для всех дверей)
     const { ang } = doorAngleRightDown(A, B)
+    // ✅ ЛАСТИК под дверь (убирает "проступание" стены)
+eraseUnderOpening(overlayG, p1, p2, (w.kind === 'capital' ? CAP_W : NOR_W), invScale)
 
     const symbolId =
       (d.kind === 'entry')
