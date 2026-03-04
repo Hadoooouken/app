@@ -345,15 +345,12 @@ function initWindowsFromTemplate() {
   for (const wdef of (studioWindows || [])) {
     const wall = byId.get(wdef.wallId)
     if (!wall) continue
-    if (wall.kind !== 'capital') continue
+    if (wall.kind !== 'capital') continue // ✅ только на капитальных
 
-    // ✅ 1) ширина из шаблона имеет приоритет
-    const fallbackW =
-      (wdef.kind === 'balcony')
+    const wWorld =
+      wdef.kind === 'balcony'
         ? (config.windows.balconyW ?? 180)
         : (config.windows.defaultW ?? 100)
-
-    const wWorld = (wdef.w ?? fallbackW)
 
     const dx = wall.b.x - wall.a.x
     const dy = wall.b.y - wall.a.y
@@ -367,11 +364,7 @@ function initWindowsFromTemplate() {
       wallId: wdef.wallId,
       t,
       w: wWorld,
-
-      // ✅ 2) пробрасываем доп.поля, если хочешь управлять ими из шаблона
-      thick: wdef.thick,
-      out: wdef.out,
-      type: wdef.type,
+      // thick можно не задавать — в render возьмём из config.windows.thickMulOfCap
     })
   }
 }
@@ -929,9 +922,31 @@ btnWall?.addEventListener('click', () =>
 
 btnDoor?.addEventListener('click', (e) => {
   e.preventDefault()
-  setMode(state.mode === 'draw-door' ? 'idle' : 'draw-door')
-})
 
+  if (state.mode === 'draw-door') {
+    setMode('idle')
+    return
+  }
+
+  setMode('draw-door')
+
+  const p0 = lastPointerWorld || getViewportCenterWorld()
+
+  // ✅ превью как у мебели — всегда есть, даже без стены
+  state.previewDoor = {
+    x: p0.x,
+    y: p0.y,
+    kind: 'interior',
+    w: DOOR_W_INTERIOR,
+    thick: NOR_W,
+    ok: false,
+    wallId: null,
+    t: null,
+    side: +1,
+  }
+
+  scheduleRerender()
+})
 // ---------------- delete selected wall/door ----------------
 function deleteSelectedElement() {
   // 0) Не удаляем во время рисования
@@ -1264,67 +1279,87 @@ function clampDoorTToWallParams(t, doorW, wall) {
 }
 
 function updateDoorPreviewAtPoint(p) {
-  // курсор по умолчанию, дальше можем переключить на crosshair
-  setPlannerCursor('default')
+  if (state.mode !== 'draw-door') return
 
+  // ✅ база превью всегда существует
+  const pd = state.previewDoor || {
+    x: p.x,
+    y: p.y,
+    kind: 'interior',
+    w: DOOR_W_INTERIOR,
+    thick: NOR_W,
+    ok: false,
+    wallId: null,
+    t: null,
+    side: +1,
+  }
 
+  // всегда следуем за курсором
+  pd.x = p.x
+  pd.y = p.y
+  pd.kind = 'interior'
+  pd.w = DOOR_W_INTERIOR
+  pd.thick = NOR_W
+
+  // по умолчанию — “нельзя”
+  pd.ok = false
+  pd.wallId = null
+  pd.t = null
+  pd.side = +1
+
+  // пытаемся найти normal-стену рядом с курсором
   const wallId = pickNormalWallAt(p, { tolPx: PICK_DOOR_PX })
   if (!wallId) {
-    if (state.previewDoor) {
-      state.previewDoor = null
-      scheduleRerender()
-    }
+    state.previewDoor = pd
+    setPlannerCursor('not-allowed')
+    scheduleRerender()
     return
   }
 
   const w = (state.walls || []).find(x => x.id === wallId)
   if (!w || w.kind !== 'normal') {
-    if (state.previewDoor) {
-      state.previewDoor = null
-      scheduleRerender()
-    }
+    state.previewDoor = pd
+    setPlannerCursor('not-allowed')
+    scheduleRerender()
     return
   }
 
-  // ✅ если на этой стене уже есть interior-дверь — preview не показываем
-  // const hasDoor = (state.doors || []).some(d =>
-  //   d.wallId === wallId && d.kind === 'interior' && !d.locked
-  // )
-  // if (hasDoor) {
-  //   if (state.previewDoor) {
-  //     state.previewDoor = null
-  //     scheduleRerender()
-  //   }
-  //   return
-  // }
-
-  // ✅ сюда дошли значит можно ставить дверь → курсор crosshair
-  setPlannerCursor('pointer')
-  const doorW = DOOR_W_INTERIOR
-
-  // ✅ для дверей на normal стенах используем строительную ось (va/vb),
-  // чтобы trim не влиял на t и на сторону открывания
+  // ось для t — строительная (как ты и делал)
   const A = w.va || w.a
   const B = w.vb || w.b
 
   let t = projectPointToWallT(p, A, B)
-  t = clampDoorTToWallParams(t, doorW, { a: A, b: B })
+  t = clampDoorTToWallParams(t, pd.w, { a: A, b: B })
 
+  // проверка на “подрезанные” концы (как в render.js)
+  const dx = B.x - A.x
+  const dy = B.y - A.y
+  const len = Math.hypot(dx, dy) || 1
+  const half = (pd.w || DOOR_W_INTERIOR) / 2
+  const trimA = Math.hypot((w.a.x - A.x), (w.a.y - A.y))
+  const trimB = Math.hypot((w.b.x - B.x), (w.b.y - B.y))
+  const s = t * len
+  const sMin = trimA + half
+  const sMax = len - trimB - half
+
+  // side (если нужно)
   const side = doorSideFromClick(p, A, B)
 
-  // (опционально) kind явно, чтобы render мог читать pd.kind без "undefined"
-  const next = { wallId, t, w: doorW, thick: NOR_W, side, kind: 'interior' }
-  const prev = state.previewDoor
-  const changed =
-    !prev ||
-    prev.wallId !== next.wallId ||
-    Math.abs((prev.t ?? 0) - next.t) > 1e-4 ||
-    (prev.side ?? 1) !== (next.side ?? 1)
+  // ✅ фиксируем привязку
+  pd.wallId = wallId
+  pd.t = t
+  pd.side = side
+  pd.ok = (s >= sMin && s <= sMax)
 
-  if (changed) {
-    state.previewDoor = next
-    scheduleRerender()
-  }
+  // опционально: чтобы визуально “прилипало” к стене (а не в воздухе возле стены)
+  const ux = dx / len
+  const uy = dy / len
+  pd.x = A.x + ux * s
+  pd.y = A.y + uy * s
+
+  state.previewDoor = pd
+  setPlannerCursor(pd.ok ? 'pointer' : 'not-allowed')
+  scheduleRerender()
 }
 
 let doorEdit = null
@@ -1596,17 +1631,17 @@ draw.node.addEventListener('pointerdown', (e) => {
     if (pd && pd.wallId) {
       state.doors = state.doors || []
 
-      // if (config.doors.oneInteriorPerWall) {
-      //   const existsOnWall = (state.doors || []).some(d =>
-      //     d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
-      //   )
-      //   if (existsOnWall) {
-      //     hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
-      //     state.previewDoor = null
-      //     scheduleRerender()
-      //     return
-      //   }
-      // }
+      if (config.doors.oneInteriorPerWall) {
+        const existsOnWall = (state.doors || []).some(d =>
+          d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
+        )
+        if (existsOnWall) {
+          hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
+          state.previewDoor = null
+          scheduleRerender()
+          return
+        }
+      }
 
       historyCommit('add-door')
       state.doors.push({

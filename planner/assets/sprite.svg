@@ -320,13 +320,13 @@
         <rect x="146" y="22" width="4" height="2" fill="currentColor" />
     </symbol>
 
-    <symbol id="furniture-main-door1" viewBox="0 0 90 40">
+    <symbol id="furniture-main-door1" viewBox="0 0 90 40" preserveAspectRatio="none">
         <rect width="90" height="40" fill="#F2EEE5" />
         <polygon points="13.75,38.04 90,17.99 90,20.06 14.25,39.96" fill="currentColor"
             fill-rule="nonzero" />
     </symbol>
 
-    <symbol id="furniture-main-door2" viewBox="0 0 90 70">
+    <symbol id="furniture-main-door2" viewBox="0 0 90 70" preserveAspectRatio="none">
         <rect width="90" height="40" fill="#F2EEE5" />
         <polygon points="8.74,61.57 90,33.53 90,35.59 9.25,63.5" fill="currentColor"
             fill-rule="nonzero" />

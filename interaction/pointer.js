@@ -22,6 +22,80 @@ import {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
 
+// ---- door preview helpers ----
+function projectTOnSegment(p, a, b) {
+  const abx = b.x - a.x
+  const aby = b.y - a.y
+  const apx = p.x - a.x
+  const apy = p.y - a.y
+  const ab2 = abx * abx + aby * aby || 1
+  return clamp((apx * abx + apy * aby) / ab2, 0, 1)
+}
+
+function normalTrim(w) {
+  // сколько нормальная стена подрезана относительно va/vb
+  if (!w) return { trimA: 0, trimB: 0 }
+  const A = w.va || w.a
+  const B = w.vb || w.b
+  return {
+    trimA: dist(w.a, A),
+    trimB: dist(w.b, B),
+  }
+}
+
+// обновляем state.previewDoor из позиции курсора + попадания на hit-линию normal-стены
+function updatePreviewDoorFromEvent(e, worldP) {
+  const pd = state.previewDoor || {}
+
+  // всегда "прилипает" к курсору
+  pd.x = worldP.x
+  pd.y = worldP.y
+
+  // дефолты
+  pd.kind = pd.kind || 'interior'
+  pd.w = pd.w ?? config.doors.defaultInteriorW
+  pd.thick = pd.thick ?? config.walls.NOR_W
+
+  // сброс привязки
+  pd.wallId = null
+  pd.t = null
+  pd.ok = false
+
+  const target = e.target
+  const kind = target?.getAttribute?.('data-kind')
+  const wallId = target?.getAttribute?.('data-wall-id')
+
+  // ✅ только normal-стены
+  if (kind === 'normal' && wallId) {
+    const w = (state.walls || []).find(x => x.id === wallId)
+    if (w && w.kind !== 'capital') {
+      const A = w.va || w.a
+      const B = w.vb || w.b
+
+      const t = projectTOnSegment(worldP, A, B)
+
+      // проверка чтобы дверь не вылезала за подрезанные концы
+      const doorW = pd.w
+      const half = doorW / 2
+
+      const dx = B.x - A.x
+      const dy = B.y - A.y
+      const len = Math.hypot(dx, dy) || 1
+
+      const { trimA, trimB } = normalTrim(w)
+      const s = t * len
+      const sMin = trimA + half
+      const sMax = len - trimB - half
+
+      pd.wallId = wallId
+      pd.t = t
+      pd.ok = (s >= sMin && s <= sMax)
+    }
+  }
+
+  state.previewDoor = pd
+}
+
 // thresholds
 const TAP_THRESH_PX = 10
 const CANCEL_A_PX = 14
@@ -159,6 +233,8 @@ function clampBToFirstNormalIntersection(a, b, { tolWorld, guardT = 0.08 } = {})
   return best ? { ...best } : b
 }
 
+
+
 export function initPointer(draw, { newWallId } = {}) {
   let firstPoint = null
   let down = null
@@ -188,6 +264,10 @@ export function initPointer(draw, { newWallId } = {}) {
     state.previewWall = null
     state.snapPoint = null
     state.cursorState = 'idle'
+
+    state.previewDoor = null
+    state.hoverDoorId = null
+    state.selectedDoorId = null
 
     clearPulse()
     scheduleRender()
@@ -274,8 +354,19 @@ export function initPointer(draw, { newWallId } = {}) {
 
   // --- MOVE: cursor + preview ---
   draw.node.addEventListener('pointermove', (e) => {
+    // ✅ DRAW DOOR: превью всегда следует за курсором + ok по попаданию на normal-wall hit
+    if (state.mode === 'draw-door') {
+      if (e.pointerType !== 'mouse') e.preventDefault?.()
+      const wp = screenToWorld(draw, e.clientX, e.clientY)
+      updatePreviewDoorFromEvent(e, wp)
+      scheduleRender()
+      return
+    }
+
+    // дальше как было для draw-wall
     if (state.mode !== 'draw-wall') return
     if (e.pointerType !== 'mouse') e.preventDefault?.()
+
 
     // TOUCH / PEN / COARSE: стартуем только после drag threshold
     if (isTouchLikePointer(e.pointerType)) {
@@ -330,9 +421,51 @@ export function initPointer(draw, { newWallId } = {}) {
 
   // --- DOWN ---
   draw.node.addEventListener('pointerdown', (e) => {
+    // ✅ DRAW DOOR: клик — поставить дверь если ok
+    if (state.mode === 'draw-door') {
+      if (e.button !== 0 && e.pointerType === 'mouse') return
+      if (e.pointerType !== 'mouse') e.preventDefault?.()
+
+      down = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType }
+      draw.node.setPointerCapture?.(e.pointerId)
+
+      const wp = screenToWorld(draw, e.clientX, e.clientY)
+      updatePreviewDoorFromEvent(e, wp)
+
+      const pd = state.previewDoor
+      if (pd?.ok && pd.wallId) {
+        const id = `d${Date.now().toString(36)}${Math.random().toString(16).slice(2)}`
+        const door = {
+          id,
+          kind: pd.kind || 'interior',
+          wallId: pd.wallId,
+          t: pd.t ?? 0.5,
+          w: pd.w,
+          thick: pd.thick,
+          locked: false,
+        }
+
+        if (!state.doors) state.doors = []
+        historyCommit('add door')
+        state.doors.push(door)
+
+        // можно оставить превью активным для серии дверей:
+        // state.previewDoor.ok = false; state.previewDoor.wallId = null; ...
+      } else {
+        // пульс/индикатор "нельзя"
+        if (state.ui) state.ui.snapPulse = { x: wp.x, y: wp.y, t: performance.now() }
+      }
+
+      scheduleRender()
+      return
+    }
+
+    // дальше как было для draw-wall
     if (state.mode !== 'draw-wall') return
     if (e.button !== 0 && e.pointerType === 'mouse') return
     if (e.pointerType !== 'mouse') e.preventDefault?.()
+
+
 
     down = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType }
     draw.node.setPointerCapture?.(e.pointerId)
@@ -361,6 +494,11 @@ export function initPointer(draw, { newWallId } = {}) {
 
   // --- UP ---
   draw.node.addEventListener('pointerup', (e) => {
+    // ✅ DRAW DOOR: просто сбросить down и выйти
+    if (state.mode === 'draw-door') {
+      down = null
+      return
+    }
     if (state.mode !== 'draw-wall') return
     if (e.button !== 0 && e.pointerType === 'mouse') return
     if (e.pointerType !== 'mouse') e.preventDefault?.()
