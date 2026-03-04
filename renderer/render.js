@@ -609,23 +609,21 @@ export function render(draw) {
   if (state.mode === 'draw-door' && state.previewDoor) {
     const pd = state.previewDoor
 
-    const ok = pd.ok === true
-    const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-    const dash = ok ? '10 8' : '6 8'
-    const op = ok ? 0.85 : 0.22
-
+    // дефолты (на случай если previewDoor создаётся пустым)
     const doorW = pd.w ?? config.doors.defaultInteriorW
+    const half = doorW / 2
     const thick = pd.thick ?? NOR_W
 
-    // по умолчанию — “в воздухе”
+    // ✅ по умолчанию рисуем "под курсором"
     let cx = pd.x
     let cy = pd.y
     let ang = 0
+    let ok = false
 
-    // если есть стена — считаем угол/центр по стене
+    // ✅ если попали на normal-стену — рисуем "по стене"
     if (pd.wallId) {
       const w = (state.walls || []).find(x => x.id === pd.wallId)
-      if (w) {
+      if (w && w.kind !== 'capital') {
         const axis = doorWallAxis(w)
         if (axis) {
           const A = axis.a
@@ -637,8 +635,7 @@ export function render(draw) {
           const u0x = dx0 / len0
           const u0y = dy0 / len0
 
-          const half = doorW / 2
-
+          // ограничиваем чтобы не вылезала за подрезанные концы
           const tRaw = clamp((pd.t ?? 0.5), 0, 1)
           const { trimA, trimB } = normalTrim(w)
           const sMin = trimA + half
@@ -648,19 +645,31 @@ export function render(draw) {
           cx = A.x + u0x * s
           cy = A.y + u0y * s
 
+          // единый угол "вправо/вниз"
           ang = doorAngleRightDown(A, B).ang
+
+          ok = pd.ok !== false
         }
       }
     }
 
-    const symbolId = (pd.kind === 'entry') ? 'furniture-main-door1' : 'furniture-inside-door'
+    // ✅ цвет двери и рамки: зелёная/красная логика
+    const frameColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
+    const dash = ok ? '10 8' : '6 8'
+
+    // symbolId (пока interior; если захочешь entry — расширим)
+    const symbolId =
+      (pd.kind === 'entry')
+        ? 'furniture-main-door1'
+        : 'furniture-inside-door'
+
     const sym = draw.defs().findOne(`#${symbolId}`)
 
-    // рисуем сам символ
-    if (sym) {
-      const hDoor = doorSymbolHeight(symbolId, thick)
-      const offY = doorSymbolOffsetYPx(symbolId, hDoor)
+    // высота символа + смещение по Y (как у тебя)
+    const hDoor = doorSymbolHeight(symbolId, thick)
+    const offY = doorSymbolOffsetYPx(symbolId, hDoor)
 
+    if (sym) {
       useCenteredByViewBox(overlayG, sym, {
         cx, cy,
         w: doorW,
@@ -668,27 +677,18 @@ export function render(draw) {
         angDeg: ang,
         offsetY: offY,
         color: config.theme.door.preview,
-        opacity: op,
+        opacity: 0.85,
       })
-
-      // ✅ рамка как у мебели (красная/зелёная)
-      overlayG
-        .rect(doorW, hDoor)
-        .center(cx, cy)
-        .rotate(ang, cx, cy)
-        .fill({ color: '#000', opacity: 0 })
-        .stroke({ width: 2 * invScale, color: strokeColor, opacity: 0.9, dasharray: dash })
-        .attr({ 'pointer-events': 'none' })
-    } else {
-      // fallback если symbol не найден
-      overlayG
-        .rect(doorW, thick)
-        .center(cx, cy)
-        .rotate(ang, cx, cy)
-        .fill({ color: '#000', opacity: 0 })
-        .stroke({ width: 2 * invScale, color: strokeColor, opacity: 0.9, dasharray: dash })
-        .attr({ 'pointer-events': 'none' })
     }
+
+    // ✅ рамка вокруг превью (как у мебели)
+    overlayG
+      .rect(doorW, hDoor)
+      .center(cx, cy)
+      .rotate(ang, cx, cy)
+      .fill({ color: '#000', opacity: 0 })
+      .stroke({ width: 2 * invScale, color: frameColor, opacity: 0.95 })
+      .attr({ 'stroke-dasharray': dash, 'pointer-events': 'none' })
   }
   // ---- FURNITURE (draw after doors so it's on top) ----
   const furniture = state.furniture || []

@@ -1616,55 +1616,74 @@ function applyEdit(mouseWorld) {
   w.va = newVA
   w.vb = newVB
 }
-// ---------------- POINTER: select door / wall / empty ----------------
 draw.node.addEventListener('pointerdown', (e) => {
-  // --- door place mode ---
+  // --- DOOR: place mode ---
   if (state.mode === 'draw-door') {
+    // только ЛКМ для мыши
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    // на таче не даём браузеру делать своё
+    if (e.pointerType !== 'mouse') e.preventDefault?.()
+
     const p = screenToWorld(draw, e.clientX, e.clientY)
 
     doorPlace = { pointerId: e.pointerId }
     draw.node.setPointerCapture?.(e.pointerId)
 
-    updateDoorPreviewAtPoint(p)
+    // Shift = большая дверь (см updateDoorPreviewAtPoint)
+    updateDoorPreviewAtPoint(p, { big: !!e.shiftKey })
 
     const pd = state.previewDoor
-    if (pd && pd.wallId) {
+
+    // ✅ ставим только если ok (иначе у краёв подрезки будет ставиться "криво")
+    if (pd?.ok && pd.wallId) {
       state.doors = state.doors || []
 
+      // ✅ одна дверь на стену (и маленькая, и большая — всё равно 1)
       if (config.doors.oneInteriorPerWall) {
         const existsOnWall = (state.doors || []).some(d =>
           d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
         )
         if (existsOnWall) {
           hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
-          state.previewDoor = null
+          // можно оставить превью (пусть будет not-allowed), но не ставим
           scheduleRerender()
           return
         }
       }
 
+      const newId = newDoorId()
+
       historyCommit('add-door')
       state.doors.push({
-        id: newDoorId(),
+        id: newId,
         kind: 'interior',
         wallId: pd.wallId,
         t: pd.t,
-        w: DOOR_W_INTERIOR,
-        thick: NOR_W,
-        side: (pd.side === -1) ? -1 : +1, // ✅ NEW
+        w: pd.w ?? DOOR_W_INTERIOR,      // ✅ важное: берём ширину из превью (big/small)
+        thick: pd.thick ?? NOR_W,
+        side: (pd.side === -1) ? -1 : +1,
+        locked: false,
       })
 
+      // ✅ авто-выход как у мебели + выделяем установленную дверь
+      setMode('idle')
+      state.selectedDoorId = newId
       setPlannerCursor('default')
-      state.selectedDoorId = null
-      state.selectedWallId = null
-      state.previewDoor = null
+
+      scheduleRerender()
+    } else {
+      // мягкий фидбек "нельзя"
+      setPlannerCursor('not-allowed')
       scheduleRerender()
     }
+
     return
   }
 
-  // block non-left mouse buttons (for mouse)
+  // --- walls draw tool is handled in interaction/pointer.js ---
   if (state.mode === 'draw-wall') return
+
+  // block non-left mouse buttons (for mouse)
   if (e.button !== 0 && e.pointerType === 'mouse') return
   if (state.ui?.dragged && state.mode !== 'draw-furniture') return
 
@@ -1706,7 +1725,7 @@ draw.node.addEventListener('pointerdown', (e) => {
     const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
     const pf = state.previewFurniture
 
-    // 🖱️ mouse: клик = поставить
+    // 🖱️ mouse: click = place
     if (e.pointerType === 'mouse') {
       if (!meta || !pf || pf.ok === false) return
 
@@ -1722,12 +1741,11 @@ draw.node.addEventListener('pointerdown', (e) => {
         h: meta.h,
         x: pf.x,
         y: pf.y,
-        rot: 0,
+        rot: pf.rot || 0,
       })
 
-      // ✅ после постановки — select
+      setMode('idle')
       state.selectedFurnitureId = newId
-      setMode('idle') // сбросит preview/draft и выйдет из draw-furniture
       scheduleRerender()
       return
     }
@@ -1741,7 +1759,6 @@ draw.node.addEventListener('pointerdown', (e) => {
     state.ui ??= {}
     state.ui.lockPan = true
 
-    const p = screenToWorld(draw, e.clientX, e.clientY)
     updateFurniturePreviewAtPoint(p)
     scheduleRerender()
     return
@@ -1797,13 +1814,13 @@ draw.node.addEventListener('pointerdown', (e) => {
     scheduleRerender()
     return
   }
+
   // --- empty click: clear selections ---
   state.selectedWallId = null
   state.selectedDoorId = null
   state.selectedFurnitureId = null
   scheduleRerender()
 })
-
 draw.node.addEventListener('pointermove', (e) => {
   const p = screenToWorld(draw, e.clientX, e.clientY)
   lastPointerWorld = p

@@ -72,7 +72,7 @@ export const config = {
         defaultEntryW: 90,
 
         // Ограничение: одна межкомнатная дверь (interior) на одну стену.
-        oneInteriorPerWall: true,
+        oneInteriorPerWall: false,
 
         // Шаг сдвига двери стрелками (world units).
         // Обычно удобно = шагу магнита (grid.snapStep), но можно отдельно.
