@@ -2,7 +2,7 @@
 import { config } from './config.js'
 
 export const state = {
-  mode: 'select',
+  mode: 'idle',
 
   // geometry
   walls: [],
@@ -125,7 +125,7 @@ export function loadOneRoomTemplate() {
   state.previewDoor = null
 
   // reset mode/editor/ui
-  state.mode = 'select'
+  state.mode = 'idle'
   state.edit = null
   state.ui = { dragged: false, lockPan: false, snapPulse: null }
   state.snapPoint = null

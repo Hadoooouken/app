@@ -345,12 +345,14 @@ function initWindowsFromTemplate() {
   for (const wdef of (studioWindows || [])) {
     const wall = byId.get(wdef.wallId)
     if (!wall) continue
-    if (wall.kind !== 'capital') continue // ✅ только на капитальных
+    if (wall.kind !== 'capital') continue
 
     const wWorld =
-      wdef.kind === 'balcony'
-        ? (config.windows.balconyW ?? 180)
-        : (config.windows.defaultW ?? 100)
+      (typeof wdef.w === 'number')
+        ? wdef.w
+        : (wdef.kind === 'balcony'
+            ? (config.windows.balconyW ?? 180)
+            : (config.windows.defaultW ?? 100))
 
     const dx = wall.b.x - wall.a.x
     const dy = wall.b.y - wall.a.y
@@ -364,7 +366,6 @@ function initWindowsFromTemplate() {
       wallId: wdef.wallId,
       t,
       w: wWorld,
-      // thick можно не задавать — в render возьмём из config.windows.thickMulOfCap
     })
   }
 }
