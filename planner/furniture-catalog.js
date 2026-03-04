@@ -7,7 +7,12 @@ export const FURN_CATEGORIES = [
             { typeId: 'sofa', label: 'Диван', symbolId: 'divan', w: 200, h: 90 },
             { typeId: 'bed', label: 'Кровать', symbolId: 'f-sofa', w: 200, h: 160 },
             { typeId: 'frameTest', label: 'Рамка', symbolId: 'frame', w: 200, h: 100 },
-             { typeId: 'icon-corel-test', label: 'лалала', symbolId: 'icon-corel', w: 200, h: 100 }
+            { typeId: 'icon-corel-test', label: 'лалала', symbolId: 'icon-corel', w: 200, h: 100 },
+            { typeId: 'furniture-window', label: 'окно', symbolId: 'furniture-window', w: 100, h: 40 },
+            { typeId: 'furniture-balcony', label: 'балкон', symbolId: 'furniture-balcony', w: 200, h: 100 },
+            { typeId: 'furniture-main-door1', label: 'дверь-1', symbolId: 'furniture-main-door1', w: 90, h: 40 },
+            { typeId: 'furniture-main-door2', label: 'дверь-2', symbolId: 'furniture-main-door2', w: 90, h: 70 },
+            { typeId: 'furniture-inside-door', label: 'дверь-3', symbolId: 'furniture-inside-door', w: 90, h: 100 }
 
         ],
     },

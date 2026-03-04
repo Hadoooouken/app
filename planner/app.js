@@ -134,7 +134,7 @@ function setPlannerCursor(cursor) {
 // coarse = мобилки/планшеты (для допусков/UX), НЕ ДЛЯ отключения hover
 const isTouchLike = matchMedia('(pointer: coarse)').matches
 // толерансы под мобилку (coarse pointer) — увеличиваем "попадание"
-const WALL_TOL_PX   = isTouchLike ? Math.round(PICK_WALL_PX * 2.5)   : PICK_WALL_PX
+const WALL_TOL_PX = isTouchLike ? Math.round(PICK_WALL_PX * 2.5) : PICK_WALL_PX
 const HANDLE_TOL_PX = isTouchLike ? Math.round(PICK_HANDLE_PX * 2.5) : PICK_HANDLE_PX
 
 // -------- id generator for user walls --------
@@ -345,12 +345,15 @@ function initWindowsFromTemplate() {
   for (const wdef of (studioWindows || [])) {
     const wall = byId.get(wdef.wallId)
     if (!wall) continue
-    if (wall.kind !== 'capital') continue // ✅ только на капитальных
+    if (wall.kind !== 'capital') continue
 
-    const wWorld =
-      wdef.kind === 'balcony'
+    // ✅ 1) ширина из шаблона имеет приоритет
+    const fallbackW =
+      (wdef.kind === 'balcony')
         ? (config.windows.balconyW ?? 180)
         : (config.windows.defaultW ?? 100)
+
+    const wWorld = (wdef.w ?? fallbackW)
 
     const dx = wall.b.x - wall.a.x
     const dy = wall.b.y - wall.a.y
@@ -364,7 +367,11 @@ function initWindowsFromTemplate() {
       wallId: wdef.wallId,
       t,
       w: wWorld,
-      // thick можно не задавать — в render возьмём из config.windows.thickMulOfCap
+
+      // ✅ 2) пробрасываем доп.поля, если хочешь управлять ими из шаблона
+      thick: wdef.thick,
+      out: wdef.out,
+      type: wdef.type,
     })
   }
 }
@@ -1235,6 +1242,19 @@ function projectPointToWallT(p, a, b) {
   return (apx * abx + apy * aby) / ab2
 }
 
+function doorSideFromClick(p, a, b) {
+  // cross(AB, AP) = dx*(py) - dy*(px)
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const px = p.x - a.x
+  const py = p.y - a.y
+  const cr = dx * py - dy * px
+
+  // +1 = "слева" от направления A->B (в сторону unitNormal(a,b))
+  // -1 = "справа"
+  return (cr >= 0) ? +1 : -1
+}
+
 function clampDoorTToWallParams(t, doorW, wall) {
   const a = wall.a, b = wall.b
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
@@ -1267,30 +1287,39 @@ function updateDoorPreviewAtPoint(p) {
   }
 
   // ✅ если на этой стене уже есть interior-дверь — preview не показываем
-  const hasDoor = (state.doors || []).some(d =>
-    d.wallId === wallId && d.kind === 'interior' && !d.locked
-  )
-  if (hasDoor) {
-    if (state.previewDoor) {
-      state.previewDoor = null
-      scheduleRerender()
-    }
-    return
-  }
+  // const hasDoor = (state.doors || []).some(d =>
+  //   d.wallId === wallId && d.kind === 'interior' && !d.locked
+  // )
+  // if (hasDoor) {
+  //   if (state.previewDoor) {
+  //     state.previewDoor = null
+  //     scheduleRerender()
+  //   }
+  //   return
+  // }
 
   // ✅ сюда дошли значит можно ставить дверь → курсор crosshair
   setPlannerCursor('pointer')
   const doorW = DOOR_W_INTERIOR
 
-  let t = projectPointToWallT(p, w.a, w.b)
-  t = clampDoorTToWallParams(t, doorW, w)
+  // ✅ для дверей на normal стенах используем строительную ось (va/vb),
+  // чтобы trim не влиял на t и на сторону открывания
+  const A = w.va || w.a
+  const B = w.vb || w.b
 
-  const next = { wallId, t, w: doorW, thick: NOR_W }
+  let t = projectPointToWallT(p, A, B)
+  t = clampDoorTToWallParams(t, doorW, { a: A, b: B })
+
+  const side = doorSideFromClick(p, A, B)
+
+  // (опционально) kind явно, чтобы render мог читать pd.kind без "undefined"
+  const next = { wallId, t, w: doorW, thick: NOR_W, side, kind: 'interior' }
   const prev = state.previewDoor
   const changed =
     !prev ||
     prev.wallId !== next.wallId ||
-    Math.abs((prev.t ?? 0) - next.t) > 1e-4
+    Math.abs((prev.t ?? 0) - next.t) > 1e-4 ||
+    (prev.side ?? 1) !== (next.side ?? 1)
 
   if (changed) {
     state.previewDoor = next
@@ -1325,8 +1354,11 @@ function applyDoorDrag(mouseWorld) {
   const w = (state.walls || []).find(x => x.id === d.wallId)
   if (!w) return
 
-  d.t = projectPointToWallT(mouseWorld, w.a, w.b)
-  clampDoorTToWall(d, w)
+  const A = w.va || w.a
+  const B = w.vb || w.b
+
+  d.t = projectPointToWallT(mouseWorld, A, B)
+  d.t = clampDoorTToWallParams(d.t, (d.w ?? DOOR_W_INTERIOR), { a: A, b: B })
 }
 
 function stopDoorDrag() {
@@ -1564,17 +1596,17 @@ draw.node.addEventListener('pointerdown', (e) => {
     if (pd && pd.wallId) {
       state.doors = state.doors || []
 
-      if (config.doors.oneInteriorPerWall) {
-        const existsOnWall = (state.doors || []).some(d =>
-          d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
-        )
-        if (existsOnWall) {
-          hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
-          state.previewDoor = null
-          scheduleRerender()
-          return
-        }
-      }
+      // if (config.doors.oneInteriorPerWall) {
+      //   const existsOnWall = (state.doors || []).some(d =>
+      //     d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
+      //   )
+      //   if (existsOnWall) {
+      //     hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
+      //     state.previewDoor = null
+      //     scheduleRerender()
+      //     return
+      //   }
+      // }
 
       historyCommit('add-door')
       state.doors.push({
@@ -1584,6 +1616,7 @@ draw.node.addEventListener('pointerdown', (e) => {
         t: pd.t,
         w: DOOR_W_INTERIOR,
         thick: NOR_W,
+        side: (pd.side === -1) ? -1 : +1, // ✅ NEW
       })
 
       setPlannerCursor('default')
@@ -1693,42 +1726,42 @@ draw.node.addEventListener('pointerdown', (e) => {
     }
   }
 
-// --- wall handle ---
-const h =
-  typeof pickWallHandleAt === 'function'
-    ? pickWallHandleAt(p, { tolPx: HANDLE_TOL_PX })
-    : null
+  // --- wall handle ---
+  const h =
+    typeof pickWallHandleAt === 'function'
+      ? pickWallHandleAt(p, { tolPx: HANDLE_TOL_PX })
+      : null
 
-if (h) {
-  state.selectedWallId = h.id
-  state.selectedDoorId = null
-  state.selectedFurnitureId = null
-  startEdit(h.handle, h.id, p)
-  scheduleRerender()
-  return
-}
+  if (h) {
+    state.selectedWallId = h.id
+    state.selectedDoorId = null
+    state.selectedFurnitureId = null
+    startEdit(h.handle, h.id, p)
+    scheduleRerender()
+    return
+  }
 
-// --- wall by DOM target (особенно важно на touch) ---
-const wallIdFromTarget = findWallIdFromEventTarget(e.target)
-if (wallIdFromTarget) {
-  state.selectedWallId = wallIdFromTarget
-  state.selectedDoorId = null
-  state.selectedFurnitureId = null
-  startEdit('move', wallIdFromTarget, p)
-  scheduleRerender()
-  return
-}
+  // --- wall by DOM target (особенно важно на touch) ---
+  const wallIdFromTarget = findWallIdFromEventTarget(e.target)
+  if (wallIdFromTarget) {
+    state.selectedWallId = wallIdFromTarget
+    state.selectedDoorId = null
+    state.selectedFurnitureId = null
+    startEdit('move', wallIdFromTarget, p)
+    scheduleRerender()
+    return
+  }
 
-// --- wall body ---
-const wid = pickNormalWallAt(p, { tolPx: WALL_TOL_PX })
-if (wid) {
-  state.selectedWallId = wid
-  state.selectedDoorId = null
-  state.selectedFurnitureId = null
-  startEdit('move', wid, p)
-  scheduleRerender()
-  return
-}
+  // --- wall body ---
+  const wid = pickNormalWallAt(p, { tolPx: WALL_TOL_PX })
+  if (wid) {
+    state.selectedWallId = wid
+    state.selectedDoorId = null
+    state.selectedFurnitureId = null
+    startEdit('move', wid, p)
+    scheduleRerender()
+    return
+  }
   // --- empty click: clear selections ---
   state.selectedWallId = null
   state.selectedDoorId = null

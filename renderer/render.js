@@ -25,6 +25,117 @@ function midPoint(a, b) {
 function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
+
+function doorAngleRightDown(a, b) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len = Math.hypot(dx, dy) || 1
+
+  // базовый юнит-вектор вдоль стены
+  let tx = dx / len
+  let ty = dy / len
+
+  // ✅ нормализуем направление:
+  // 1) хотим "вправо" (tx > 0)
+  // 2) если вертикаль (tx≈0) — хотим "вниз" (ty > 0)
+  if (tx < 0 || (Math.abs(tx) < 1e-9 && ty < 0)) {
+    tx = -tx
+    ty = -ty
+  }
+
+  const ang = (Math.atan2(ty, tx) * 180) / Math.PI
+  return { tx, ty, ang }
+}
+
+
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
+
+// ось стены для дверей: capital = inner face, normal = construction axis
+function doorWallAxis(w) {
+  if (!w) return null
+  if (w.kind === 'capital') return { a: (w.ia || w.a), b: (w.ib || w.b) }
+  return { a: (w.va || w.a), b: (w.vb || w.b) }
+}
+
+// сколько normal-стена подрезана относительно va/vb (в world units = cm)
+function normalTrim(w) {
+  if (!w || w.kind === 'capital') return { trimA: 0, trimB: 0 }
+  const A = w.va || w.a
+  const B = w.vb || w.b
+  const trimA = Math.hypot((w.a.x - A.x), (w.a.y - A.y))
+  const trimB = Math.hypot((w.b.x - B.x), (w.b.y - B.y))
+  return { trimA, trimB }
+}
+
+
+// Стабильная постановка <use> по центру viewBox, без bbox/.center()
+function useCenteredByViewBox(g, sym, {
+  cx, cy, w, h, angDeg,
+  flipX = false,
+  flipY = false,
+  offsetX = 0,
+  offsetY = 0,
+  color = null,
+  opacity = 1,
+} = {}) {
+  const sx = flipX ? -1 : 1
+  const sy = flipY ? -1 : 1
+
+  const el = g.use(sym).size(w, h)
+
+  const tf =
+    `translate(${cx} ${cy}) ` +
+    `rotate(${angDeg}) ` +
+    `scale(${sx} ${sy}) ` +
+    `translate(${-w / 2 + offsetX} ${-h / 2 + offsetY})`
+
+  const attrs = { 'pointer-events': 'none', opacity, transform: tf }
+  if (color != null) attrs.color = color
+  el.attr(attrs)
+  return el
+}
+function doorSymbolHeight(symbolId, thick) {
+  // Внутри furniture-inside-door полотно по высоте = 10,
+  // а viewBox по высоте = 22. Поэтому если рисовать size(..., thick),
+  // полотно получится тоньше стены. Компенсируем масштабом.
+  if (symbolId === 'furniture-inside-door') return thick * (22 / 10)
+
+  // Если будешь использовать furniture-main-door2: rect 40 при viewBox 70
+  if (symbolId === 'furniture-main-door2') return thick * (70 / 40)
+
+  // furniture-main-door1: rect 40 при viewBox 40 — ок
+  return thick
+}
+
+const ENTRY_DOOR_TAIL_PX = 0.25;
+// 0.25 = 25% толщины стены. Можешь поставить 0.2 (20%) или 0.3.
+
+function doorSymbolOffsetYPx(symbolId, hPx) {
+  // Хотим, чтобы "полотно" (rect) было по центру толщины стены.
+  // Для inside-door: viewBoxH=22, rectY=0, rectH=10 => центр rect = 5, центр viewBox = 11 => нужно сдвинуть вниз на 6 (в единицах viewBox)
+  if (symbolId === 'furniture-inside-door') {
+    const vbH = 22
+    const rectY = 0
+    const rectH = 10
+    const shiftVb = (vbH / 2) - (rectY + rectH / 2) // 11 - 5 = 6
+    return hPx * (shiftVb / vbH)
+  }
+
+
+
+  // Если когда-то будешь использовать main-door2: viewBoxH=70, rectH=40 (rectY=0) => центр rect = 20, центр vb = 35 => shift=15
+  if (symbolId === 'furniture-main-door2') {
+    const vbH = 70
+    const rectY = 0
+    const rectH = 40
+    const shiftVb = (vbH / 2) - (rectY + rectH / 2) // 35 - 20 = 15
+    return hPx * (shiftVb / vbH)
+  }
+
+  return 0
+}
+
 function readableRotation(deg) {
   let r = deg
   while (r > 180) r -= 360
@@ -40,6 +151,9 @@ function unitNormal(a, b) {
   const len = Math.hypot(dx, dy) || 1
   return { nx: -dy / len, ny: dx / len }
 }
+
+function rotCW(v) { return { nx: v.ny, ny: -v.nx } } // поворот на -90°
+function rotCCW(v) { return { nx: -v.ny, ny: v.nx } } // поворот на +90°
 
 function rotatePointAround(px, py, cx, cy, deg) {
   const a = (deg * Math.PI) / 180
@@ -115,13 +229,12 @@ function getCapitalsCentroid(walls) {
 
   let sx = 0, sy = 0, n = 0
   for (const w of caps) {
-    sx += w.a.x
-    sy += w.a.y
-    n++
+    sx += w.a.x + w.b.x
+    sy += w.a.y + w.b.y
+    n += 2
   }
   return { x: sx / n, y: sy / n }
 }
-
 /**
  * Возвращает нормаль (nx, ny), направленную НАРУЖУ относительно centroid.
  */
@@ -137,6 +250,16 @@ function outwardNormal(a, b, centroid) {
   const d2 = Math.hypot(p2.x - centroid.x, p2.y - centroid.y)
 
   return d1 < d2 ? { nx: -nx, ny: -ny } : { nx, ny }
+}
+
+// ✅ Двери на капитальных позиционируются по inner-face (w.ia/w.ib),
+// а стена рисуется по center-line. Поэтому SVG “уезжает” внутрь и
+// снаружи остаётся полоска стены.
+// Фикс: сдвигаем центр двери на CAP_W/2 в сторону наружной нормали.
+function centerDoorOnCapitalWall(wall, cx, cy, capCentroid) {
+  if (!wall || wall.kind !== 'capital') return { cx, cy }
+  const { nx, ny } = outwardNormal(wall.a, wall.b, capCentroid)
+  return { cx: cx + nx * (CAP_W / 2), cy: cy + ny * (CAP_W / 2) }
 }
 
 /* =========================
@@ -205,6 +328,7 @@ export function render(draw) {
   const caps = walls.filter(w => w.kind === 'capital')
   const normals = walls.filter(w => w.kind !== 'capital')
 
+
   // 1) CAPITAL
   for (const w of caps) {
     wallsG
@@ -212,8 +336,8 @@ export function render(draw) {
       .stroke({
         width: CAP_W,
         color: config.theme.wall.capital,
-        linecap: 'round',
-        linejoin: 'round',
+        linecap: 'square',   // ✅ вместо round
+        linejoin: 'miter',   // не критично, но логично для "прямых"
       })
       .attr({ 'pointer-events': 'none' })
   }
@@ -245,34 +369,60 @@ export function render(draw) {
       const p1 = { x: cx - ux * half, y: cy - uy * half }
       const p2 = { x: cx + ux * half, y: cy + uy * half }
 
-      // outward offset
+      // нормаль "наружу" (как и было)
       const { nx, ny } = outwardNormal(a, b, capCentroid)
-      const out = (config.windows.outwardOffsetWorld ?? 2) * invScale
+
+      // ✅ хотим, чтобы окно ровно совпадало по толщине с CAP_W
+
+
+      // ✅ если thick == CAP_W, то окно должно сидеть по центру стены => смещение 0
+      // (если хочешь лёгкий вынос — ставь 1..2, но тогда оно будет торчать наружу)
+      const out = (win.out ?? 0)
 
       const q1 = { x: p1.x + nx * out, y: p1.y + ny * out }
       const q2 = { x: p2.x + nx * out, y: p2.y + ny * out }
 
-      const thick = (win.thick ?? (CAP_W * (config.windows.thickMulOfCap ?? 0.65)))
+      const thick = (win.thick ?? CAP_W)
 
-      overlayG
-        .line(q1.x, q1.y, q2.x, q2.y)
-        .stroke({
-          width: thick,
-          color: config.theme.window.fill,
-          linecap: 'butt',
-          linejoin: 'round',
-          opacity: 1,
-        })
-        .attr({ 'pointer-events': 'none' })
+      // --- SVG symbol вместо линии ---
+      // обычное окно или балкон (если ты так помечаешь)
+      const symbolId =
+        (win.kind === 'balcony' || win.type === 'balcony')
+          ? 'furniture-balcony'
+          : 'furniture-window'
 
-      overlayG
-        .line(q1.x, q1.y, q2.x, q2.y)
-        .stroke({
-          width: Math.max(1, 2 * invScale),
-          color: config.theme.window.stroke,
-          linecap: 'round',
-        })
-        .attr({ 'pointer-events': 'none' })
+      const sym = draw.defs().findOne(`#${symbolId}`)
+      if (sym) {
+        const ang = angleDeg(a, b)
+
+        // центр окна с выносом наружу
+        const mx = (q1.x + q2.x) / 2
+        const my = (q1.y + q2.y) / 2
+
+        // длина = winW (см), толщина = thick (см)
+        overlayG
+          .use(sym)
+          .size(winW, thick)
+          .center(mx, my)
+          .rotate(ang, mx, my)
+          .attr({
+            'pointer-events': 'none',
+            // currentColor внутри символа возьмётся отсюда:
+            color: config.theme.window.stroke,
+          })
+      } else {
+        // fallback: если symbol не найден — рисуем как раньше линией
+        overlayG
+          .line(q1.x, q1.y, q2.x, q2.y)
+          .stroke({
+            width: thick,
+            color: config.theme.window.fill,
+            linecap: 'butt',
+            linejoin: 'round',
+            opacity: 1,
+          })
+          .attr({ 'pointer-events': 'none' })
+      }
     }
   }
 
@@ -302,8 +452,9 @@ export function render(draw) {
         width: strokeWidth,
         color: stroke,
         opacity,
-        linecap: 'butt',
-        linejoin: 'round',
+        // стало
+        linecap: 'square',
+        linejoin: 'miter',
       })
       .attr({ 'pointer-events': 'none' })
   }
@@ -356,6 +507,8 @@ export function render(draw) {
 
   // ---- DOORS ----
   const doors = state.doors || []
+  const capCentroidForDoors = getCapitalsCentroid(walls) // ✅ для outwardNormal()
+
   for (const d of doors) {
     const isDoorSelected = d.id && d.id === state.selectedDoorId
     const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
@@ -370,41 +523,93 @@ export function render(draw) {
     const w = walls.find(x => x.id === d.wallId)
     if (!w) continue
 
-    const a = w.a
-    const b = w.b
+    const axis = doorWallAxis(w)
+    if (!axis) continue
 
-    const t = Math.max(0, Math.min(1, d.t ?? 0.5))
-    const defaultW =
-      (d.kind === 'entry')
-        ? config.doors.defaultEntryW
-        : config.doors.defaultInteriorW
+    const A = axis.a
+    const B = axis.b
+
+    // длина оси (для позиционирования двери)
+    const dx0 = B.x - A.x
+    const dy0 = B.y - A.y
+    const len0 = Math.hypot(dx0, dy0) || 1
+    const u0x = dx0 / len0
+    const u0y = dy0 / len0
+
+    const defaultW = (d.kind === 'entry')
+      ? config.doors.defaultEntryW
+      : config.doors.defaultInteriorW
 
     const doorW = d.w ?? defaultW
-    const thick = d.thick ?? NOR_W
-
-    const cx = a.x + (b.x - a.x) * t
-    const cy = a.y + (b.y - a.y) * t
-
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const len = Math.hypot(dx, dy) || 1
-    const ux = dx / len
-    const uy = dy / len
-
     const half = doorW / 2
-    const p1 = { x: cx - ux * half, y: cy - uy * half }
-    const p2 = { x: cx + ux * half, y: cy + uy * half }
 
-    overlayG
-      .line(p1.x, p1.y, p2.x, p2.y)
-      .stroke({
-        width: (isDoorSelected || isDoorHovered) ? (thick + 2) : thick,
+    const thickBase = d.thick ?? (w.kind === 'capital' ? CAP_W : NOR_W)
+    const thick = (isDoorSelected || isDoorHovered) ? (thickBase + 2) : thickBase
+
+    // --- t -> позиция вдоль ОСИ ---
+    const tRaw = clamp((d.t ?? 0.5), 0, 1)
+    const { trimA, trimB } = normalTrim(w)
+    const sMin = trimA + half
+    const sMax = len0 - trimB - half
+    const s = clamp(tRaw * len0, sMin, sMax)
+
+    // ✅ центр двери по ОСИ (ВАЖНО: по u0x/u0y, а не по "нормализованному" направлению)
+    const cx0 = A.x + u0x * s
+    const cy0 = A.y + u0y * s
+
+    let cx = cx0
+    let cy = cy0
+      ; ({ cx, cy } = centerDoorOnCapitalWall(w, cx, cy, capCentroidForDoors))
+    // ✅ центрируем дверь по толщине капитальной стены (убирает “полоску”)
+
+    // линия для hit (направление не важно)
+    const p1 = { x: cx - u0x * half, y: cy - u0y * half }
+    const p2 = { x: cx + u0x * half, y: cy + u0y * half }
+
+    // ✅ угол двери "вправо/вниз" (единый стиль для всех дверей)
+    const { ang } = doorAngleRightDown(A, B)
+
+    const symbolId =
+      (d.kind === 'entry')
+        ? 'furniture-main-door1'
+        : 'furniture-inside-door'
+
+    const sym = draw.defs().findOne(`#${symbolId}`)
+
+    if (sym) {
+      const hBase = doorSymbolHeight(symbolId, thick)
+      let hDoor = hBase
+      let offY = doorSymbolOffsetYPx(symbolId, hDoor)
+
+      if (d.kind === 'entry') {
+        const tail = thick * ENTRY_DOOR_TAIL_PX   // сколько “выпирает” вниз
+        hDoor += tail                             // ✅ увеличили высоту, чтобы НЕ оголять стену сверху
+        offY += tail / 2                          // ✅ сдвиг вниз на половину добавки => верх ровно совпадёт со стеной
+      }
+
+      useCenteredByViewBox(overlayG, sym, {
+        cx, cy,
+        w: doorW,
+        h: hDoor,
+        angDeg: ang,
+        offsetY: offY,
+        flipX: false,
+        flipY: false,
         color: doorColor,
-        linecap: 'butt',
-        linejoin: 'round',
         opacity: 1,
       })
-      .attr({ 'pointer-events': 'none' })
+    } else {
+      overlayG
+        .line(p1.x, p1.y, p2.x, p2.y)
+        .stroke({
+          width: thick,
+          color: doorColor,
+          linecap: 'butt',
+          linejoin: 'round',
+          opacity: 1,
+        })
+        .attr({ 'pointer-events': 'none' })
+    }
 
     // hit only for interior
     if (d.kind === 'interior' && !d.locked) {
@@ -423,39 +628,84 @@ export function render(draw) {
     const pd = state.previewDoor
     const w = walls.find(x => x.id === pd.wallId)
     if (w) {
-      const a = w.a
-      const b = w.b
+      const axis = doorWallAxis(w)
+      if (axis) {
+        const A = axis.a
+        const B = axis.b
 
-      const t = Math.max(0, Math.min(1, pd.t ?? 0.5))
-      const doorW = pd.w ?? config.doors.defaultInteriorW
-      const thick = pd.thick ?? NOR_W
+        const dx0 = B.x - A.x
+        const dy0 = B.y - A.y
+        const len0 = Math.hypot(dx0, dy0) || 1
+        const u0x = dx0 / len0
+        const u0y = dy0 / len0
 
-      const cx = a.x + (b.x - a.x) * t
-      const cy = a.y + (b.y - a.y) * t
+        const doorW = pd.w ?? config.doors.defaultInteriorW
+        const half = doorW / 2
+        const thick = pd.thick ?? (w.kind === 'capital' ? CAP_W : NOR_W)
 
-      const dx = b.x - a.x
-      const dy = b.y - a.y
-      const len = Math.hypot(dx, dy) || 1
-      const ux = dx / len
-      const uy = dy / len
+        const tRaw = clamp((pd.t ?? 0.5), 0, 1)
+        const { trimA, trimB } = normalTrim(w)
+        const sMin = trimA + half
+        const sMax = len0 - trimB - half
+        const s = clamp(tRaw * len0, sMin, sMax)
 
-      const half = doorW / 2
-      const p1 = { x: cx - ux * half, y: cy - uy * half }
-      const p2 = { x: cx + ux * half, y: cy + uy * half }
+        const cx0 = A.x + u0x * s
+        const cy0 = A.y + u0y * s
 
-      overlayG
-        .line(p1.x, p1.y, p2.x, p2.y)
-        .stroke({
-          width: thick,
-          color: config.theme.door.preview,
-          opacity: 1,
-          dasharray: '10 8',
-          linecap: 'butt',
-        })
-        .attr({ 'pointer-events': 'none' })
+        let cx = cx0
+        let cy = cy0
+          ; ({ cx, cy } = centerDoorOnCapitalWall(w, cx, cy, capCentroidForDoors))
+
+
+        const { ang } = doorAngleRightDown(A, B)
+
+        const symbolId =
+          (pd.kind === 'entry')
+            ? 'furniture-main-door1'
+            : 'furniture-inside-door'
+
+        const sym = draw.defs().findOne(`#${symbolId}`)
+
+        if (sym) {
+          const hBase = doorSymbolHeight(symbolId, thick)
+          let hDoor = hBase
+          let offY = doorSymbolOffsetYPx(symbolId, hDoor)
+
+          if (pd.kind === 'entry') {
+            const tail = thick * ENTRY_DOOR_TAIL_PX   // сколько “выпирает” вниз
+            hDoor += tail                             // ✅ увеличили высоту, чтобы НЕ оголять стену сверху
+            offY += tail / 2                          // ✅ сдвиг вниз на половину добавки => верх ровно совпадёт со стеной
+          }
+
+          useCenteredByViewBox(overlayG, sym, {
+            cx, cy,
+            w: doorW,
+            h: hDoor,
+            angDeg: ang,
+            offsetY: offY,
+            flipX: false,
+            flipY: false,
+            color: config.theme.door.preview,
+            opacity: 1,
+          })
+        } else {
+          const p1 = { x: cx - u0x * half, y: cy - u0y * half }
+          const p2 = { x: cx + u0x * half, y: cy + u0y * half }
+
+          overlayG
+            .line(p1.x, p1.y, p2.x, p2.y)
+            .stroke({
+              width: thick,
+              color: config.theme.door.preview,
+              opacity: 1,
+              dasharray: '10 8',
+              linecap: 'butt',
+            })
+            .attr({ 'pointer-events': 'none' })
+        }
+      }
     }
   }
-
   // ---- FURNITURE (draw after doors so it's on top) ----
   const furniture = state.furniture || []
   for (const f of furniture) {
@@ -515,35 +765,35 @@ export function render(draw) {
     }
   }
 
- // ---- PREVIEW FURNITURE ----
-if (state.mode === 'draw-furniture' && state.previewFurniture) {
-  const pf = state.previewFurniture
-  const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
+  // ---- PREVIEW FURNITURE ----
+  if (state.mode === 'draw-furniture' && state.previewFurniture) {
+    const pf = state.previewFurniture
+    const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
 
-  const ok = pf.ok !== false
+    const ok = pf.ok !== false
 
-  // как рисовать
-  const op = ok ? 0.85 : 0.22
-  const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-  const dash = ok ? '10 8' : '6 8'
+    // как рисовать
+    const op = ok ? 0.85 : 0.22
+    const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
+    const dash = ok ? '10 8' : '6 8'
 
-  if (sym) {
+    if (sym) {
+      overlayG
+        .use(sym)
+        .size(pf.w, pf.h)
+        .center(pf.x, pf.y)
+        .rotate(pf.rot || 0, pf.x, pf.y)
+        .attr({ 'pointer-events': 'none', opacity: op })
+    }
+
     overlayG
-      .use(sym)
-      .size(pf.w, pf.h)
+      .rect(pf.w, pf.h)
       .center(pf.x, pf.y)
       .rotate(pf.rot || 0, pf.x, pf.y)
-      .attr({ 'pointer-events': 'none', opacity: op })
+      .fill({ color: '#000', opacity: 0 })
+      .stroke({ width: 2 * invScale, color: strokeColor, opacity: 0.9, dasharray: dash })
+      .attr({ 'pointer-events': 'none' })
   }
-
-  overlayG
-    .rect(pf.w, pf.h)
-    .center(pf.x, pf.y)
-    .rotate(pf.rot || 0, pf.x, pf.y)
-    .fill({ color: '#000', opacity: 0 })
-    .stroke({ width: 2 * invScale, color: strokeColor, opacity: 0.9, dasharray: dash })
-    .attr({ 'pointer-events': 'none' })
-}
 
   // 4) selected wall highlight + handles (walls)
   if (state.selectedWallId) {
