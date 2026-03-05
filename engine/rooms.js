@@ -10,6 +10,34 @@ import {
 } from './geom.js'
 import { getCapitalPolygon as getCapPoly } from './metrics.js'
 
+function cross(ax, ay, bx, by) {
+    return ax * by - ay * bx
+}
+
+// Возвращает точку пересечения двух ОТРЕЗКОВ (если есть), иначе null.
+// Нормально работает и для "почти попали" с допуском по t/u.
+function segIntersectionPoint(a, b, c, d, tol = 1e-9) {
+    const r = { x: b.x - a.x, y: b.y - a.y }
+    const s = { x: d.x - c.x, y: d.y - c.y }
+
+    const rxs = cross(r.x, r.y, s.x, s.y)
+    const qpx = c.x - a.x
+    const qpy = c.y - a.y
+
+    // параллельно (в т.ч. коллинеарно) — тут не режем,
+    // коллинеарности достаточно твоих pointOnSegment/projection-веток
+    if (Math.abs(rxs) < tol) return null
+
+    const t = cross(qpx, qpy, s.x, s.y) / rxs
+    const u = cross(qpx, qpy, r.x, r.y) / rxs
+
+    // допуск чуть шире, чтобы ловить микро-ошибки
+    const eps = 1e-6
+    if (t < -eps || t > 1 + eps || u < -eps || u > 1 + eps) return null
+
+    return { x: a.x + t * r.x, y: a.y + t * r.y }
+}
+
 // ---------------- utils ----------------
 
 // ⚠️ это НЕ "численный EPS", это допуск склейки вершин/стыков в топологии.
@@ -160,6 +188,22 @@ function splitSegments(segs) {
     for (let i = 0; i < segs.length; i++) {
         const si = segs[i]
         splits[i].push(si.a, si.b)
+    }
+
+    // ✅ режем сегменты по пересечениям "середина-середина"
+    for (let i = 0; i < segs.length; i++) {
+        for (let j = i + 1; j < segs.length; j++) {
+            const si = segs[i]
+            const sj = segs[j]
+
+            const ip = segIntersectionPoint(si.a, si.b, sj.a, sj.b)
+            if (!ip) continue
+
+            // если пересечение близко к концам — всё равно можно пушить,
+            // дедуп по keyOf потом уберёт дубли
+            splits[i].push({ ...ip })
+            splits[j].push({ ...ip })
+        }
     }
 
     // добавляем проекции концов на чужие сегменты
