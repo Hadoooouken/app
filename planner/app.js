@@ -1322,8 +1322,15 @@ function resetToTemplate() {
   state.furniture = deepClone(templateSnapshot.furniture)
   state.trace = deepClone(templateSnapshot.trace)
 
+  // ✅ UI-состояние тоже "как по умолчанию"
+  state.ui ??= {}
+  state.ui.showMetrics = true
+
   // ✅ центрируем/масштабируем как при старте
   fitPlannerToWalls()
+
+  // если у тебя есть syncUI() — лучше дернуть, чтобы кнопки/подсказки совпали
+  syncUI?.()
 
   scheduleRerender()
 }
