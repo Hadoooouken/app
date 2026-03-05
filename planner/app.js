@@ -1668,9 +1668,13 @@ draw.node.addEventListener('pointerdown', (e) => {
 
       // ✅ авто-выход как у мебели + выделяем установленную дверь
       setMode('idle')
-      state.selectedDoorId = newId
-      setPlannerCursor('default')
 
+      // ✅ mobile: оставляем выделение, desktop: нет
+      if (e.pointerType !== 'mouse') {
+        state.selectedDoorId = newId
+      }
+
+      setPlannerCursor('default')
       scheduleRerender()
     } else {
       // мягкий фидбек "нельзя"
@@ -1746,7 +1750,7 @@ draw.node.addEventListener('pointerdown', (e) => {
       })
 
       setMode('idle')
-      state.selectedFurnitureId = newId
+      // ✅ desktop (mouse): НЕ выделяем после постановки
       scheduleRerender()
       return
     }
@@ -1913,6 +1917,7 @@ draw.node.addEventListener('pointerup', (e) => {
     const pf = state.previewFurniture
 
     // ставим только если валидно
+    // ставим только если валидно
     if (meta && pf && pf.ok !== false) {
       historyCommit('add-furniture')
       state.furniture ??= []
@@ -1929,9 +1934,11 @@ draw.node.addEventListener('pointerup', (e) => {
         rot: pf.rot || 0,
       })
 
-      // ✅ после постановки — select
-      state.selectedFurnitureId = newId
+      // ✅ сначала выходим в idle (оно всё сбросит)
       setMode('idle')
+
+      // ✅ потом возвращаем выделение (только mobile/touch ветка)
+      state.selectedFurnitureId = newId
     }
 
     scheduleRerender()
