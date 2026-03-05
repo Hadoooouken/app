@@ -26,23 +26,6 @@ function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
-const ERASE_EXTRA_PX = 2 // запас в пикселях
-
-function eraseUnderOpening(g, p1, p2, wallThick, invScale) {
-  const extra = ERASE_EXTRA_PX * invScale
-  const bg = config.theme.canvas?.bg ?? '#fff' // если забудешь — не сломается
-
-  g.line(p1.x, p1.y, p2.x, p2.y)
-    .stroke({
-      width: wallThick + extra,
-      color: bg,
-      linecap: 'butt',
-      linejoin: 'miter',
-      opacity: 1,
-    })
-    .attr({ 'pointer-events': 'none' })
-}
-
 function doorAngleRightDown(a, b) {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -64,7 +47,15 @@ function doorAngleRightDown(a, b) {
   return { tx, ty, ang }
 }
 
+function currentNormalWallStrokeWidth(w) {
+  const isSelected = w.id && w.id === state.selectedWallId
+  const isHovered = !isSelected && w.id && w.id === state.hoverWallId
 
+  let sw = NOR_W
+  if (isHovered) sw = NOR_W + (config.theme.wall.hoverExtraW ?? 2)
+  if (isSelected) sw = NOR_W + (config.theme.wall.selectedExtraW ?? 4)
+  return sw
+}
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
 
@@ -397,7 +388,6 @@ export function render(draw) {
           : 'furniture-window'
 
       const sym = draw.defs().findOne(`#${symbolId}`)
-      eraseUnderOpening(overlayG, q1, q2, CAP_W, invScale)
       if (sym) {
         const ang = angleDeg(a, b)
 
@@ -512,118 +502,218 @@ export function render(draw) {
   }
 
   // ---- DOORS ----
-  const doors = state.doors || []
+  // ---- DOORS ----
+const doors = state.doors || []
+const BLEED_PX = config.render?.doorBleedPx ?? 2
+const openingBg = config.theme.canvas?.bg ?? '#F2EEE5'
 
-  for (const d of doors) {
-    const isDoorSelected = d.id && d.id === state.selectedDoorId
-    const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
+for (const d of doors) {
+  const isDoorSelected = d.id && d.id === state.selectedDoorId
+  const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
 
-    let doorColor = (d.kind === 'entry')
-      ? config.theme.door.entry
-      : config.theme.door.interior
+  let doorColor = (d.kind === 'entry')
+    ? config.theme.door.entry
+    : config.theme.door.interior
 
-    if (isDoorHovered) doorColor = config.theme.door.hover
-    if (isDoorSelected) doorColor = config.theme.door.selected
+  if (isDoorHovered) doorColor = config.theme.door.hover
+  if (isDoorSelected) doorColor = config.theme.door.selected
 
-    const w = walls.find(x => x.id === d.wallId)
-    if (!w) continue
+  const w = walls.find(x => x.id === d.wallId)
+  if (!w) continue
 
-    const axis = doorWallAxis(w)
-    if (!axis) continue
+  const axis = doorWallAxis(w)
+  if (!axis) continue
 
-    const A = axis.a
-    const B = axis.b
+  const A = axis.a
+  const B = axis.b
 
-    // длина оси (для позиционирования двери)
-    const dx0 = B.x - A.x
-    const dy0 = B.y - A.y
-    const len0 = Math.hypot(dx0, dy0) || 1
-    const u0x = dx0 / len0
-    const u0y = dy0 / len0
+  // длина оси (для позиционирования двери)
+  const dx0 = B.x - A.x
+  const dy0 = B.y - A.y
+  const len0 = Math.hypot(dx0, dy0) || 1
+  const u0x = dx0 / len0
+  const u0y = dy0 / len0
 
-    const defaultW = (d.kind === 'entry')
-      ? config.doors.defaultEntryW
-      : config.doors.defaultInteriorW
+  const defaultW = (d.kind === 'entry')
+    ? config.doors.defaultEntryW
+    : config.doors.defaultInteriorW
 
-    const doorW = d.w ?? defaultW
-    const half = doorW / 2
+  const doorW = d.w ?? defaultW
+  const half = doorW / 2
 
-    const thickBase = d.thick ?? NOR_W
-    const thick = (isDoorSelected || isDoorHovered) ? (thickBase + 2) : thickBase
+  const thickBase = d.thick ?? NOR_W
+  const thick = thickBase
 
-    // --- t -> позиция вдоль ОСИ ---
-    const tRaw = clamp((d.t ?? 0.5), 0, 1)
-    const { trimA, trimB } = normalTrim(w)
-    const sMin = trimA + half
-    const sMax = len0 - trimB - half
-    const s = clamp(tRaw * len0, sMin, sMax)
+  // --- t -> позиция вдоль ОСИ ---
+  const tRaw = clamp((d.t ?? 0.5), 0, 1)
+  const { trimA, trimB } = normalTrim(w)
+  const sMin = trimA + half
+  const sMax = len0 - trimB - half
+  const s = clamp(tRaw * len0, sMin, sMax)
 
-    // ✅ центр двери по ОСИ (ВАЖНО: по u0x/u0y, а не по "нормализованному" направлению)
-    const cx = A.x + u0x * s
-    const cy = A.y + u0y * s
+  // центр двери по ОСИ
+  const cx = A.x + u0x * s
+  const cy = A.y + u0y * s
 
-    // линия для hit (направление не важно)
-    const p1 = { x: cx - u0x * half, y: cy - u0y * half }
-    const p2 = { x: cx + u0x * half, y: cy + u0y * half }
+  // угол двери
+  const { ang } = doorAngleRightDown(A, B)
 
-    // ✅ угол двери "вправо/вниз" (единый стиль для всех дверей)
-    const { ang } = doorAngleRightDown(A, B)
-    // ✅ ЛАСТИК под дверь (убирает "проступание" стены)
-eraseUnderOpening(overlayG, p1, p2, (w.kind === 'capital' ? CAP_W : NOR_W), invScale)
+  // hit line точки (направление не важно)
+  const p1 = { x: cx - u0x * half, y: cy - u0y * half }
+  const p2 = { x: cx + u0x * half, y: cy + u0y * half }
 
-    const symbolId =
-      (d.kind === 'entry')
-        ? 'furniture-main-door1'
-        : 'furniture-inside-door'
+  // --- anti-alias fix: подложка под проём (ТОЛЬКО по толщине) ---
+  const wallStroke = (w.kind === 'capital') ? CAP_W : currentNormalWallStrokeWidth(w)
+  const bleed = BLEED_PX * invScale
 
-    const sym = draw.defs().findOne(`#${symbolId}`)
+  overlayG
+    .rect(doorW, wallStroke + 2 * bleed)
+    .center(cx, cy)
+    .rotate(ang, cx, cy)
+    .fill(openingBg)
+    .attr({ 'pointer-events': 'none' })
 
-    if (sym) {
-      const hBase = doorSymbolHeight(symbolId, thick)
-      let hDoor = hBase
-      let offY = doorSymbolOffsetYPx(symbolId, hDoor)
+  const symbolId =
+    (d.kind === 'entry')
+      ? 'furniture-main-door1'
+      : 'furniture-inside-door'
 
-      if (d.kind === 'entry') {
-        const tail = thick * ENTRY_DOOR_TAIL_PX   // сколько “выпирает” вниз
-        hDoor += tail                             // ✅ увеличили высоту, чтобы НЕ оголять стену сверху
-        offY += tail / 2                          // ✅ сдвиг вниз на половину добавки => верх ровно совпадёт со стеной
-      }
+  const sym = draw.defs().findOne(`#${symbolId}`)
 
-      useCenteredByViewBox(overlayG, sym, {
-        cx, cy,
-        w: doorW,
-        h: hDoor,
-        angDeg: ang,
-        offsetY: offY,
-        flipX: false,
-        flipY: false,
+  if (sym) {
+    const hBase = doorSymbolHeight(symbolId, thick)
+    let hDoor = hBase
+    let offY = doorSymbolOffsetYPx(symbolId, hDoor)
+
+    if (d.kind === 'entry') {
+      const tail = thick * ENTRY_DOOR_TAIL_PX
+      hDoor += tail
+      offY += tail / 2
+    }
+
+    useCenteredByViewBox(overlayG, sym, {
+      cx, cy,
+      w: doorW,
+      h: hDoor,
+      angDeg: ang,
+      offsetY: offY,
+      color: doorColor,
+      opacity: 1,
+    })
+  } else {
+    overlayG
+      .line(p1.x, p1.y, p2.x, p2.y)
+      .stroke({
+        width: thick,
         color: doorColor,
+        linecap: 'butt',
+        linejoin: 'round',
         opacity: 1,
       })
-    } else {
-      overlayG
-        .line(p1.x, p1.y, p2.x, p2.y)
-        .stroke({
-          width: thick,
-          color: doorColor,
-          linecap: 'butt',
-          linejoin: 'round',
-          opacity: 1,
-        })
-        .attr({ 'pointer-events': 'none' })
-    }
+      .attr({ 'pointer-events': 'none' })
+  }
 
-    // hit only for interior
-    if (d.kind === 'interior' && !d.locked) {
-      overlayG
-        .line(p1.x, p1.y, p2.x, p2.y)
-        .stroke({ width: hitDoorW, color: '#000', opacity: 0 })
-        .attr({
-          'pointer-events': 'stroke',
-          'data-door-id': d.id,
-        })
+  // hit only for interior
+  if (d.kind === 'interior' && !d.locked) {
+    overlayG
+      .line(p1.x, p1.y, p2.x, p2.y)
+      .stroke({ width: hitDoorW, color: '#000', opacity: 0 })
+      .attr({
+        'pointer-events': 'stroke',
+        'data-door-id': d.id,
+      })
+  }
+}
+
+// ---- PREVIEW DOOR ----
+if (state.mode === 'draw-door' && state.previewDoor) {
+  const pd = state.previewDoor
+
+  const doorW = pd.w ?? config.doors.defaultInteriorW
+  const half = doorW / 2
+  const thick = pd.thick ?? NOR_W
+
+  let cx = pd.x
+  let cy = pd.y
+  let ang = 0
+  let ok = false
+
+  // для подложки нужен wallStroke (если есть wallId)
+  let wallStroke = NOR_W
+
+  if (pd.wallId) {
+    const ww = (state.walls || []).find(x => x.id === pd.wallId)
+    if (ww && ww.kind !== 'capital') {
+      wallStroke = currentNormalWallStrokeWidth(ww)
+
+      const axis = doorWallAxis(ww)
+      if (axis) {
+        const A = axis.a
+        const B = axis.b
+
+        const dx0 = B.x - A.x
+        const dy0 = B.y - A.y
+        const len0 = Math.hypot(dx0, dy0) || 1
+        const u0x = dx0 / len0
+        const u0y = dy0 / len0
+
+        const tRaw = clamp((pd.t ?? 0.5), 0, 1)
+        const { trimA, trimB } = normalTrim(ww)
+        const sMin = trimA + half
+        const sMax = len0 - trimB - half
+        const s = clamp(tRaw * len0, sMin, sMax)
+
+        cx = A.x + u0x * s
+        cy = A.y + u0y * s
+
+        ang = doorAngleRightDown(A, B).ang
+        ok = pd.ok !== false
+      }
     }
   }
+
+  const frameColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
+  const dash = ok ? '10 8' : '6 8'
+
+  const symbolId =
+    (pd.kind === 'entry')
+      ? 'furniture-main-door1'
+      : 'furniture-inside-door'
+
+  const sym = draw.defs().findOne(`#${symbolId}`)
+
+  const hDoor = doorSymbolHeight(symbolId, thick)
+  const offY = doorSymbolOffsetYPx(symbolId, hDoor)
+
+  // подложка (опционально, но пусть будет одинаково)
+  const bleed = BLEED_PX * invScale
+  overlayG
+    .rect(doorW, wallStroke + 2 * bleed)
+    .center(cx, cy)
+    .rotate(ang, cx, cy)
+    .fill(openingBg)
+    .attr({ 'pointer-events': 'none' })
+
+  if (sym) {
+    useCenteredByViewBox(overlayG, sym, {
+      cx, cy,
+      w: doorW,
+      h: hDoor,
+      angDeg: ang,
+      offsetY: offY,
+      color: config.theme.door.preview,
+      opacity: 0.85,
+    })
+  }
+
+  overlayG
+    .rect(doorW, hDoor)
+    .center(cx, cy)
+    .rotate(ang, cx, cy)
+    .fill({ color: '#000', opacity: 0 })
+    .stroke({ width: 2 * invScale, color: frameColor, opacity: 0.95 })
+    .attr({ 'stroke-dasharray': dash, 'pointer-events': 'none' })
+}
 
   // ---- PREVIEW DOOR ----
   if (state.mode === 'draw-door' && state.previewDoor) {
