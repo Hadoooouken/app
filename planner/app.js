@@ -929,7 +929,7 @@ function syncUI() {
   btnWall?.classList.toggle('is-active', isWall)
   btnDoor?.classList.toggle('is-active', isDoor)
   btnFurniture?.classList.toggle('is-active', isFurn)
-  btnMetrics?.classList.toggle('is-active', !!state.ui?.showMetrics)
+  // btnMetrics?.classList.toggle('is-active', !!state.ui?.showMetrics)
 
   if (!hint) return
 
@@ -1268,6 +1268,70 @@ function applyRedo() {
 
   if (redo()) rerender()
 }
+
+const btnReset = document.getElementById('btn-reset')
+
+// deep clone, чтобы snapshot не мутировал
+function deepClone(obj) {
+  if (typeof structuredClone === 'function') return structuredClone(obj)
+  return JSON.parse(JSON.stringify(obj))
+}
+
+// ✅ эталон темплейта (заполним один раз после init)
+let templateSnapshot = null
+
+function captureTemplateSnapshotOnce() {
+  if (templateSnapshot) return
+  templateSnapshot = {
+    walls: deepClone(state.walls || []),
+    doors: deepClone(state.doors || []),
+    windows: deepClone(state.windows || []),
+    furniture: deepClone(state.furniture || []),
+    // если нужно — можно добавить trace:
+    trace: deepClone(state.trace || null),
+  }
+}
+
+function resetToTemplate() {
+  if (!templateSnapshot) return
+
+  // ✅ чтобы Reset отменялся одним Undo
+  historyCommit('reset-template')
+
+  // сброс интерактивных состояний / выделений
+  resetInteractionState?.()
+  state.selectedWallId = null
+  state.selectedDoorId = null
+  state.selectedFurnitureId = null
+  state.hoverWallId = null
+  state.hoverDoorId = null
+  state.hoverFurnitureId = null
+  state.previewWall = null
+  state.previewDoor = null
+  state.previewFurniture = null
+  state.edit = null
+  furnitureEdit = null
+  doorEdit = null
+  furniturePlace = null
+  doorPlace = null
+
+  // ✅ восстановили как в темплейте
+  state.walls = deepClone(templateSnapshot.walls)
+  state.doors = deepClone(templateSnapshot.doors)
+  state.windows = deepClone(templateSnapshot.windows)
+  state.furniture = deepClone(templateSnapshot.furniture)
+  state.trace = deepClone(templateSnapshot.trace)
+
+  // ✅ центрируем/масштабируем как при старте
+  fitPlannerToWalls()
+
+  scheduleRerender()
+}
+
+btnReset?.addEventListener('click', (e) => {
+  e.preventDefault()
+  resetToTemplate()
+})
 
 btnUndo?.addEventListener('click', (e) => {
   e.preventDefault()
@@ -2044,9 +2108,13 @@ draw.node.addEventListener('pointercancel', (e) => {
 syncUI()
 loadStudioTemplate()
 initWindowsFromTemplate()
+
 requestAnimationFrame(() => {
   fitPlannerToWalls()
   rerender()
+
+  // ✅ один раз запоминаем “как было в темплейте”
+  captureTemplateSnapshotOnce()
 })
 
 // resize (один)
