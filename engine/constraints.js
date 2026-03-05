@@ -251,6 +251,34 @@ function snapPointToCapitalSegments(p, tolWorld) {
   return best
 }
 
+function intersectsCapitals(a, b, tolWorld, ignoreWallId = null) {
+  const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+  for (const c of caps) {
+    if (ignoreWallId && c.id === ignoreWallId) continue
+
+    const hit = segmentIntersectionParams(a, b, c.a, c.b)
+    if (!hit) continue
+
+    // коллинеарное наложение — тоже запрещаем (если заметное)
+    if (hit.type === 'overlap') {
+      if (hit.overlapLen > tolWorld) return true
+      continue
+    }
+
+    // точечное пересечение
+    const ip = hit.p
+
+    // ✅ стык разрешаем только если пересечение рядом с концом НОВОГО сегмента
+    const nearNewA = Math.hypot(ip.x - a.x, ip.y - a.y) <= tolWorld
+    const nearNewB = Math.hypot(ip.x - b.x, ip.y - b.y) <= tolWorld
+    if (nearNewA || nearNewB) continue
+
+    // ❌ иначе “пробили” капиталку насквозь
+    return true
+  }
+  return false
+}
+
 // ---------------- LIMITS + NO X-INTERSECTIONS ----------------
 
 let cachedKey = ''
@@ -269,11 +297,12 @@ export function isSegmentAllowed(a, b, opts = {}) {
   const { ignoreWallId = null, tolPx = 2 } = opts
 
   const scale = Math.max(1e-6, state.view.scale)
+  const tolWorld = tolPx / scale
 
   // 1) внутри капитального контура (если он есть) — граница тоже ок
   const poly = getCapitalPolygon()
   if (poly && poly.length >= 3) {
-    const boundaryTolWorld = tolPx / scale
+    const boundaryTolWorld = tolWorld
 
     if (!pointInPolyInclusive(a, poly, boundaryTolWorld)) return false
     if (!pointInPolyInclusive(b, poly, boundaryTolWorld)) return false
@@ -287,9 +316,35 @@ export function isSegmentAllowed(a, b, opts = {}) {
     }
   }
 
-  // 2) запрет пересечений (normal-normal)
-  const tolWorld = tolPx / scale
+  // 1.5) запрет “пробить” капитальную стену насквозь
+  {
+    const caps = (state.walls || []).filter(w => w && w.kind === 'capital')
+    for (const c of caps) {
+      if (ignoreWallId && c.id === ignoreWallId) continue
 
+      const hit = segmentIntersectionParams(a, b, c.a, c.b)
+      if (!hit) continue
+
+      // коллинеарное наложение — тоже запрещаем, если заметное
+      if (hit.type === 'overlap') {
+        if (hit.overlapLen > tolWorld) return false
+        continue
+      }
+
+      // точечное пересечение
+      const ip = hit.p
+
+      // ✅ стык разрешаем только если пересечение рядом с концом НОВОГО сегмента
+      const nearNewA = Math.hypot(ip.x - a.x, ip.y - a.y) <= tolWorld
+      const nearNewB = Math.hypot(ip.x - b.x, ip.y - b.y) <= tolWorld
+      if (nearNewA || nearNewB) continue
+
+      // ❌ иначе новый сегмент пересёк капитальную стену "внутри себя"
+      return false
+    }
+  }
+
+  // 2) запрет пересечений (normal-normal)
   for (const w of (state.walls || [])) {
     if (!w) continue
     if (w.kind === 'capital') continue
@@ -316,12 +371,12 @@ export function isSegmentAllowed(a, b, opts = {}) {
     const nearNewB = Math.hypot(ip.x - b.x, ip.y - b.y) <= tolWorld
     if (nearNewA || nearNewB) continue
 
-    // ✅ НОВОЕ: если пересечение рядом с концом СУЩЕСТВУЮЩЕЙ стены — ТОЖЕ разрешаем
+    // ✅ если пересечение рядом с концом СУЩЕСТВУЮЩЕЙ стены — тоже разрешаем
     const nearOldA = Math.hypot(ip.x - wa.x, ip.y - wa.y) <= tolWorld
     const nearOldB = Math.hypot(ip.x - wb.x, ip.y - wb.y) <= tolWorld
     if (nearOldA || nearOldB) continue
 
-    // ❌ иначе новый сегмент пересёк существующую стену "внутри себя"
+    // ❌ иначе новый сегмент пересёк существующую normal-стену "внутри себя"
     return false
   }
 

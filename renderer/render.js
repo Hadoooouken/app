@@ -471,7 +471,7 @@ export function render(draw) {
         color: stroke,
         opacity,
         // стало
-        linecap: 'square',
+        linecap: 'butt',     // ✅ не удлиняет конец
         linejoin: 'miter',
       })
       .attr({ 'pointer-events': 'none' })
@@ -1080,32 +1080,20 @@ export function render(draw) {
   roomsG.attr({ 'pointer-events': 'none' })
 
   // нет комнат — не рисуем
-  if (rooms.length <= 1) return
+  if (!rooms.length) return
 
-  // ✅ считаем площадь "коробки" (по капитальным стенам)
-  const bb = getCapitalBBox(walls)
-  const boxAreaM2 = bb
-    ? unitsToMeters(bb.maxX - bb.minX) * unitsToMeters(bb.maxY - bb.minY)
-    : Infinity
+  // (опционально) если не хочешь показывать единственную “общую” комнату
+  // if (rooms.length === 1) return
 
-  const areas = rooms.map(r => r.areaM2).sort((a, b) => b - a)
-  const maxArea = areas[0] ?? 0
+  const roomsFontPx = config.render?.rooms?.fontPx ?? 14
+  const fontWorld = roomsFontPx * invScale
 
-  // ✅ выкидываем "внешнюю область" ТОЛЬКО если она больше коробки (то есть реально внешняя)
-  // запас 3–8% норм, чтобы не ловить погрешности
-  const OUTSIDE_MUL = config.rooms?.outsideDropMul ?? 1.05
-  const dropLargest = maxArea > boxAreaM2 * OUTSIDE_MUL
-
-  const roomsToDraw = dropLargest
-    ? rooms.filter(r => r.areaM2 < maxArea - 1e-6)
-    : rooms
-
-  for (const r of roomsToDraw) {
+  for (const r of rooms) {
     const txt = roomsG.text(`${fmtM2(r.areaM2)} м²`)
     txt
       .center(r.label.x, r.label.y)
       .font({
-        size: (config.render?.rooms?.fontPx ?? 14) * invScale,
+        size: fontWorld,
         family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
         weight: 700,
       })
@@ -1114,7 +1102,7 @@ export function render(draw) {
     txt.attr({
       'paint-order': 'stroke',
       stroke: config.theme.rooms.stroke,
-      'stroke-width': (config.render?.rooms?.fontPx ?? 14) * invScale * config.theme.rooms.strokeMul,
+      'stroke-width': fontWorld * config.theme.rooms.strokeMul,
       'dominant-baseline': 'middle',
       'text-anchor': 'middle',
     })
