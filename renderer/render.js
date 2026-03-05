@@ -26,6 +26,27 @@ function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
+function drawDashedBox(g, {
+  cx, cy, w, h, angDeg,
+  invScale,
+  color,
+  opacity = 0.95,
+} = {}) {
+  const STROKE_PX = config.render?.outlineStrokePx ?? 2
+  const DASH_A_PX = config.render?.outlineDashApx ?? 10
+  const DASH_B_PX = config.render?.outlineDashBpx ?? 8
+
+  const strokeW = STROKE_PX * invScale
+  const dash = `${DASH_A_PX * invScale} ${DASH_B_PX * invScale}`
+
+  g.rect(w, h)
+    .center(cx, cy)
+    .rotate(angDeg, cx, cy)
+    .fill({ color: '#000', opacity: 0 })
+    .stroke({ width: strokeW, color, opacity })
+    .attr({ 'stroke-dasharray': dash, 'pointer-events': 'none' })
+}
+
 function doorAngleRightDown(a, b) {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -501,89 +522,88 @@ export function render(draw) {
     }
   }
 
+
   // ---- DOORS ----
-  // ---- DOORS ----
-const doors = state.doors || []
-const BLEED_PX = config.render?.doorBleedPx ?? 2
-const openingBg = config.theme.canvas?.bg ?? '#F2EEE5'
+  const doors = state.doors || []
+  const BLEED_PX = config.render?.doorBleedPx ?? 2
+ const openingBg = config.theme.canvas?.bg 
 
-for (const d of doors) {
-  const isDoorSelected = d.id && d.id === state.selectedDoorId
-  const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
+  for (const d of doors) {
+    const isDoorSelected = d.id && d.id === state.selectedDoorId
+    const isDoorHovered = !isDoorSelected && d.id && d.id === state.hoverDoorId
 
-  let doorColor = (d.kind === 'entry')
-    ? config.theme.door.entry
-    : config.theme.door.interior
+    let doorColor = (d.kind === 'entry')
+      ? config.theme.door.entry
+      : config.theme.door.interior
 
-  if (isDoorHovered) doorColor = config.theme.door.hover
-  if (isDoorSelected) doorColor = config.theme.door.selected
+    if (isDoorHovered) doorColor = config.theme.door.hover
+    if (isDoorSelected) doorColor = config.theme.door.selected
 
-  const w = walls.find(x => x.id === d.wallId)
-  if (!w) continue
+    const w = walls.find(x => x.id === d.wallId)
+    if (!w) continue
 
-  const axis = doorWallAxis(w)
-  if (!axis) continue
+    const axis = doorWallAxis(w)
+    if (!axis) continue
 
-  const A = axis.a
-  const B = axis.b
+    const A = axis.a
+    const B = axis.b
 
-  // длина оси (для позиционирования двери)
-  const dx0 = B.x - A.x
-  const dy0 = B.y - A.y
-  const len0 = Math.hypot(dx0, dy0) || 1
-  const u0x = dx0 / len0
-  const u0y = dy0 / len0
+    const dx0 = B.x - A.x
+    const dy0 = B.y - A.y
+    const len0 = Math.hypot(dx0, dy0) || 1
+    const u0x = dx0 / len0
+    const u0y = dy0 / len0
 
-  const defaultW = (d.kind === 'entry')
-    ? config.doors.defaultEntryW
-    : config.doors.defaultInteriorW
+    const defaultW = (d.kind === 'entry')
+      ? config.doors.defaultEntryW
+      : config.doors.defaultInteriorW
 
-  const doorW = d.w ?? defaultW
-  const half = doorW / 2
+    const doorW = d.w ?? defaultW
+    const half = doorW / 2
 
-  const thickBase = d.thick ?? NOR_W
-  const thick = thickBase
+    const thick = (d.thick ?? NOR_W)
 
-  // --- t -> позиция вдоль ОСИ ---
-  const tRaw = clamp((d.t ?? 0.5), 0, 1)
-  const { trimA, trimB } = normalTrim(w)
-  const sMin = trimA + half
-  const sMax = len0 - trimB - half
-  const s = clamp(tRaw * len0, sMin, sMax)
+    const tRaw = clamp((d.t ?? 0.5), 0, 1)
+    const { trimA, trimB } = normalTrim(w)
+    const sMin = trimA + half
+    const sMax = len0 - trimB - half
+    const s = clamp(tRaw * len0, sMin, sMax)
 
-  // центр двери по ОСИ
-  const cx = A.x + u0x * s
-  const cy = A.y + u0y * s
+    const cx = A.x + u0x * s
+    const cy = A.y + u0y * s
 
-  // угол двери
-  const { ang } = doorAngleRightDown(A, B)
+    const { ang } = doorAngleRightDown(A, B)
 
-  // hit line точки (направление не важно)
-  const p1 = { x: cx - u0x * half, y: cy - u0y * half }
-  const p2 = { x: cx + u0x * half, y: cy + u0y * half }
+    const p1 = { x: cx - u0x * half, y: cy - u0y * half }
+    const p2 = { x: cx + u0x * half, y: cy + u0y * half }
 
-  // --- anti-alias fix: подложка под проём (ТОЛЬКО по толщине) ---
-  const wallStroke = (w.kind === 'capital') ? CAP_W : currentNormalWallStrokeWidth(w)
-  const bleed = BLEED_PX * invScale
+    // anti-alias fix: подложка под проём (ТОЛЬКО по толщине)
+    const wallStroke = (w.kind === 'capital') ? CAP_W : currentNormalWallStrokeWidth(w)
+    const bleed = BLEED_PX * invScale
 
-  overlayG
-    .rect(doorW, wallStroke + 2 * bleed)
-    .center(cx, cy)
-    .rotate(ang, cx, cy)
-    .fill(openingBg)
-    .attr({ 'pointer-events': 'none' })
+    overlayG
+      .rect(doorW, wallStroke + 2 * bleed)
+      .center(cx, cy)
+      .rotate(ang, cx, cy)
+      .fill(openingBg)
+      .attr({ 'pointer-events': 'none' })
 
-  const symbolId =
-    (d.kind === 'entry')
-      ? 'furniture-main-door1'
-      : 'furniture-inside-door'
+    const symbolId =
+      (d.kind === 'entry')
+        ? 'furniture-main-door1'
+        : 'furniture-inside-door'
 
-  const sym = draw.defs().findOne(`#${symbolId}`)
+    const sym = draw.defs().findOne(`#${symbolId}`)
 
-  if (sym) {
-    const hBase = doorSymbolHeight(symbolId, thick)
-    let hDoor = hBase
+    // размеры символа (и для пунктирной рамки)
+    let hDoor = doorSymbolHeight(symbolId, thick)
     let offY = doorSymbolOffsetYPx(symbolId, hDoor)
+
+    // 🔧 чтобы “палочка” касалась стены (как мы делали)
+    // подвинуть ближе: уменьшаем смещение вниз
+    if (symbolId === 'furniture-main-door1') {
+      offY = offY - (1.5 * invScale) // можешь 1..3px, подстрой
+    }
 
     if (d.kind === 'entry') {
       const tail = thick * ENTRY_DOOR_TAIL_PX
@@ -591,150 +611,75 @@ for (const d of doors) {
       offY += tail / 2
     }
 
-    useCenteredByViewBox(overlayG, sym, {
-      cx, cy,
-      w: doorW,
-      h: hDoor,
-      angDeg: ang,
-      offsetY: offY,
-      color: doorColor,
-      opacity: 1,
-    })
-  } else {
-    overlayG
-      .line(p1.x, p1.y, p2.x, p2.y)
-      .stroke({
-        width: thick,
+    if (sym) {
+      useCenteredByViewBox(overlayG, sym, {
+        cx, cy,
+        w: doorW,
+        h: hDoor,
+        angDeg: ang,
+        offsetY: offY,
         color: doorColor,
-        linecap: 'butt',
-        linejoin: 'round',
         opacity: 1,
       })
-      .attr({ 'pointer-events': 'none' })
-  }
+    } else {
+      overlayG
+        .line(p1.x, p1.y, p2.x, p2.y)
+        .stroke({
+          width: thick,
+          color: doorColor,
+          linecap: 'butt',
+          linejoin: 'round',
+          opacity: 1,
+        })
+        .attr({ 'pointer-events': 'none' })
+    }
 
-  // hit only for interior
-  if (d.kind === 'interior' && !d.locked) {
-    overlayG
-      .line(p1.x, p1.y, p2.x, p2.y)
-      .stroke({ width: hitDoorW, color: '#000', opacity: 0 })
-      .attr({
-        'pointer-events': 'stroke',
-        'data-door-id': d.id,
+    // пунктирная обводка при редактировании (выбрана дверь)
+    if (isDoorSelected) {
+      drawDashedBox(overlayG, {
+        cx, cy,
+        w: doorW,
+        h: hDoor,
+        angDeg: ang,
+        invScale,
+        color: config.theme.wall.selected,
+        opacity: 0.95,
       })
-  }
-}
+    }
 
-// ---- PREVIEW DOOR ----
-if (state.mode === 'draw-door' && state.previewDoor) {
-  const pd = state.previewDoor
-
-  const doorW = pd.w ?? config.doors.defaultInteriorW
-  const half = doorW / 2
-  const thick = pd.thick ?? NOR_W
-
-  let cx = pd.x
-  let cy = pd.y
-  let ang = 0
-  let ok = false
-
-  // для подложки нужен wallStroke (если есть wallId)
-  let wallStroke = NOR_W
-
-  if (pd.wallId) {
-    const ww = (state.walls || []).find(x => x.id === pd.wallId)
-    if (ww && ww.kind !== 'capital') {
-      wallStroke = currentNormalWallStrokeWidth(ww)
-
-      const axis = doorWallAxis(ww)
-      if (axis) {
-        const A = axis.a
-        const B = axis.b
-
-        const dx0 = B.x - A.x
-        const dy0 = B.y - A.y
-        const len0 = Math.hypot(dx0, dy0) || 1
-        const u0x = dx0 / len0
-        const u0y = dy0 / len0
-
-        const tRaw = clamp((pd.t ?? 0.5), 0, 1)
-        const { trimA, trimB } = normalTrim(ww)
-        const sMin = trimA + half
-        const sMax = len0 - trimB - half
-        const s = clamp(tRaw * len0, sMin, sMax)
-
-        cx = A.x + u0x * s
-        cy = A.y + u0y * s
-
-        ang = doorAngleRightDown(A, B).ang
-        ok = pd.ok !== false
-      }
+    // hit only for interior
+    if (d.kind === 'interior' && !d.locked) {
+      overlayG
+        .line(p1.x, p1.y, p2.x, p2.y)
+        .stroke({ width: hitDoorW, color: '#000', opacity: 0 })
+        .attr({
+          'pointer-events': 'stroke',
+          'data-door-id': d.id,
+        })
     }
   }
-
-  const frameColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-  const dash = ok ? '10 8' : '6 8'
-
-  const symbolId =
-    (pd.kind === 'entry')
-      ? 'furniture-main-door1'
-      : 'furniture-inside-door'
-
-  const sym = draw.defs().findOne(`#${symbolId}`)
-
-  const hDoor = doorSymbolHeight(symbolId, thick)
-  const offY = doorSymbolOffsetYPx(symbolId, hDoor)
-
-  // подложка (опционально, но пусть будет одинаково)
-  const bleed = BLEED_PX * invScale
-  overlayG
-    .rect(doorW, wallStroke + 2 * bleed)
-    .center(cx, cy)
-    .rotate(ang, cx, cy)
-    .fill(openingBg)
-    .attr({ 'pointer-events': 'none' })
-
-  if (sym) {
-    useCenteredByViewBox(overlayG, sym, {
-      cx, cy,
-      w: doorW,
-      h: hDoor,
-      angDeg: ang,
-      offsetY: offY,
-      color: config.theme.door.preview,
-      opacity: 0.85,
-    })
-  }
-
-  overlayG
-    .rect(doorW, hDoor)
-    .center(cx, cy)
-    .rotate(ang, cx, cy)
-    .fill({ color: '#000', opacity: 0 })
-    .stroke({ width: 2 * invScale, color: frameColor, opacity: 0.95 })
-    .attr({ 'stroke-dasharray': dash, 'pointer-events': 'none' })
-}
 
   // ---- PREVIEW DOOR ----
   if (state.mode === 'draw-door' && state.previewDoor) {
     const pd = state.previewDoor
 
-    // дефолты (на случай если previewDoor создаётся пустым)
     const doorW = pd.w ?? config.doors.defaultInteriorW
     const half = doorW / 2
     const thick = pd.thick ?? NOR_W
 
-    // ✅ по умолчанию рисуем "под курсором"
     let cx = pd.x
     let cy = pd.y
     let ang = 0
     let ok = false
 
-    // ✅ если попали на normal-стену — рисуем "по стене"
+    let wallStroke = NOR_W
+
     if (pd.wallId) {
-      const w = (state.walls || []).find(x => x.id === pd.wallId)
-      if (w && w.kind !== 'capital') {
-        const axis = doorWallAxis(w)
+      const ww = (state.walls || []).find(x => x.id === pd.wallId)
+      if (ww && ww.kind !== 'capital') {
+        wallStroke = currentNormalWallStrokeWidth(ww)
+
+        const axis = doorWallAxis(ww)
         if (axis) {
           const A = axis.a
           const B = axis.b
@@ -745,9 +690,8 @@ if (state.mode === 'draw-door' && state.previewDoor) {
           const u0x = dx0 / len0
           const u0y = dy0 / len0
 
-          // ограничиваем чтобы не вылезала за подрезанные концы
           const tRaw = clamp((pd.t ?? 0.5), 0, 1)
-          const { trimA, trimB } = normalTrim(w)
+          const { trimA, trimB } = normalTrim(ww)
           const sMin = trimA + half
           const sMax = len0 - trimB - half
           const s = clamp(tRaw * len0, sMin, sMax)
@@ -755,19 +699,14 @@ if (state.mode === 'draw-door' && state.previewDoor) {
           cx = A.x + u0x * s
           cy = A.y + u0y * s
 
-          // единый угол "вправо/вниз"
           ang = doorAngleRightDown(A, B).ang
-
           ok = pd.ok !== false
         }
       }
     }
 
-    // ✅ цвет двери и рамки: зелёная/красная логика
     const frameColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-    const dash = ok ? '10 8' : '6 8'
 
-    // symbolId (пока interior; если захочешь entry — расширим)
     const symbolId =
       (pd.kind === 'entry')
         ? 'furniture-main-door1'
@@ -775,9 +714,27 @@ if (state.mode === 'draw-door' && state.previewDoor) {
 
     const sym = draw.defs().findOne(`#${symbolId}`)
 
-    // высота символа + смещение по Y (как у тебя)
-    const hDoor = doorSymbolHeight(symbolId, thick)
-    const offY = doorSymbolOffsetYPx(symbolId, hDoor)
+    let hDoor = doorSymbolHeight(symbolId, thick)
+    let offY = doorSymbolOffsetYPx(symbolId, hDoor)
+
+    if (symbolId === 'furniture-main-door1') {
+      offY = offY - (1.5 * invScale)
+    }
+
+    if (pd.kind === 'entry') {
+      const tail = thick * ENTRY_DOOR_TAIL_PX
+      hDoor += tail
+      offY += tail / 2
+    }
+
+    // подложка (как у установленной)
+    const bleed = BLEED_PX * invScale
+    overlayG
+      .rect(doorW, wallStroke + 2 * bleed)
+      .center(cx, cy)
+      .rotate(ang, cx, cy)
+      .fill(openingBg)
+      .attr({ 'pointer-events': 'none' })
 
     if (sym) {
       useCenteredByViewBox(overlayG, sym, {
@@ -791,16 +748,19 @@ if (state.mode === 'draw-door' && state.previewDoor) {
       })
     }
 
-    // ✅ рамка вокруг превью (как у мебели)
-    overlayG
-      .rect(doorW, hDoor)
-      .center(cx, cy)
-      .rotate(ang, cx, cy)
-      .fill({ color: '#000', opacity: 0 })
-      .stroke({ width: 2 * invScale, color: frameColor, opacity: 0.95 })
-      .attr({ 'stroke-dasharray': dash, 'pointer-events': 'none' })
+    // пунктирная рамка превью
+    drawDashedBox(overlayG, {
+      cx, cy,
+      w: doorW,
+      h: hDoor,
+      angDeg: ang,
+      invScale,
+      color: frameColor,
+      opacity: 0.95,
+    })
   }
-  // ---- FURNITURE (draw after doors so it's on top) ----
+
+  // ---- FURNITURE ----
   const furniture = state.furniture || []
   for (const f of furniture) {
     const isSel = f.id === state.selectedFurnitureId
@@ -810,7 +770,6 @@ if (state.mode === 'draw-door' && state.previewDoor) {
     const sym = draw.defs().findOne(`#${f.symbolId}`)
     if (!sym) continue
 
-    // symbol (visible)
     overlayG
       .use(sym)
       .size(f.w, f.h)
@@ -818,7 +777,6 @@ if (state.mode === 'draw-door' && state.previewDoor) {
       .rotate(f.rot || 0, f.x, f.y)
       .attr({ 'pointer-events': 'none', opacity })
 
-    // hit rect
     overlayG
       .rect(f.w, f.h)
       .center(f.x, f.y)
@@ -829,15 +787,18 @@ if (state.mode === 'draw-door' && state.previewDoor) {
         'data-furniture-id': f.id,
       })
 
-    // selection outline + rotate handle
     if (isSel) {
-      overlayG
-        .rect(f.w, f.h)
-        .center(f.x, f.y)
-        .rotate(f.rot || 0, f.x, f.y)
-        .fill({ color: '#000', opacity: 0 })
-        .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.8 })
-        .attr({ 'pointer-events': 'none' })
+      // пунктир вместо solid
+      drawDashedBox(overlayG, {
+        cx: f.x,
+        cy: f.y,
+        w: f.w,
+        h: f.h,
+        angDeg: f.rot || 0,
+        invScale,
+        color: config.theme.wall.selected,
+        opacity: 0.95,
+      })
 
       const off = (Math.max(f.w, f.h) / 2) + (30 * invScale)
       const h0 = rotatePointAround(f.x, f.y - off, f.x, f.y, f.rot || 0)
@@ -865,11 +826,8 @@ if (state.mode === 'draw-door' && state.previewDoor) {
     const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
 
     const ok = pf.ok !== false
-
-    // как рисовать
     const op = ok ? 0.85 : 0.22
     const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-    const dash = ok ? '10 8' : '6 8'
 
     if (sym) {
       overlayG
@@ -880,15 +838,17 @@ if (state.mode === 'draw-door' && state.previewDoor) {
         .attr({ 'pointer-events': 'none', opacity: op })
     }
 
-    overlayG
-      .rect(pf.w, pf.h)
-      .center(pf.x, pf.y)
-      .rotate(pf.rot || 0, pf.x, pf.y)
-      .fill({ color: '#000', opacity: 0 })
-      .stroke({ width: 2 * invScale, color: strokeColor, opacity: 0.9, dasharray: dash })
-      .attr({ 'pointer-events': 'none' })
+    drawDashedBox(overlayG, {
+      cx: pf.x,
+      cy: pf.y,
+      w: pf.w,
+      h: pf.h,
+      angDeg: pf.rot || 0,
+      invScale,
+      color: strokeColor,
+      opacity: 0.95,
+    })
   }
-
   // 4) selected wall highlight + handles (walls)
   if (state.selectedWallId) {
     const w = normals.find(x => x.id === state.selectedWallId)

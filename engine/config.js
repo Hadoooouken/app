@@ -323,6 +323,7 @@ export const config = {
             // strokeWidth = fontWorld * strokeMul
             strokeMul: 0.25,
         },
+        canvas: { bg: '#F2EEE5' },
     },
 }
 
