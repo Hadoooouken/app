@@ -328,6 +328,7 @@ export function render(draw) {
   })
 
   const invScale = 1 / Math.max(1e-6, state.view.scale)
+  const showM = state.ui?.showMetrics !== false
 
   // --- HIT widths in WORLD units but stable in PX ---
   const HIT_WALL_PX = config.snap.pick.wallPx ?? 16
@@ -526,7 +527,7 @@ export function render(draw) {
   // ---- DOORS ----
   const doors = state.doors || []
   const BLEED_PX = config.render?.doorBleedPx ?? 2
- const openingBg = config.theme.canvas?.bg 
+  const openingBg = config.theme.canvas?.bg
 
   for (const d of doors) {
     const isDoorSelected = d.id && d.id === state.selectedDoorId
@@ -911,119 +912,121 @@ export function render(draw) {
   }
 
   // ---------- DIMENSIONS ----------
-  dimsG.attr({ 'pointer-events': 'none' })
+  if (showM) {
+    dimsG.attr({ 'pointer-events': 'none' })
 
-  const dim = config.render?.dim || {}
-  const fontSize = (dim.fontPx ?? 12) * invScale
-  const pad = (dim.padPx ?? 3) * invScale
-  const capCentroid = getCapitalsCentroid(walls)
+    const dim = config.render?.dim || {}
+    const fontSize = (dim.fontPx ?? 12) * invScale
+    const pad = (dim.padPx ?? 3) * invScale
+    const capCentroid = getCapitalsCentroid(walls)
 
-  for (const w of walls) {
-    const posA = w.a
-    const posB = w.b
+    for (const w of walls) {
+      const posA = w.a
+      const posB = w.b
 
-    // length by "construction geometry"
-    let lenA, lenB
-    if (w.kind !== 'capital') {
-      lenA = w.va || w.a
-      lenB = w.vb || w.b
-    } else {
-      lenA = w.ia || w.a
-      lenB = w.ib || w.b
-    }
+      // length by "construction geometry"
+      let lenA, lenB
+      if (w.kind !== 'capital') {
+        lenA = w.va || w.a
+        lenB = w.vb || w.b
+      } else {
+        lenA = w.ia || w.a
+        lenB = w.ib || w.b
+      }
 
-    const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
-    const lenM = unitsToMeters(lenUnits)
-    const txt = formatMeters(lenM)
+      const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
+      const lenM = unitsToMeters(lenUnits)
+      const txt = formatMeters(lenM)
 
-    const mid = midPoint(posA, posB)
-    const ang = readableRotation(angleDeg(posA, posB))
+      const mid = midPoint(posA, posB)
+      const ang = readableRotation(angleDeg(posA, posB))
 
-    let nx, ny
-    if (w.kind === 'capital') {
-      ({ nx, ny } = outwardNormal(posA, posB, capCentroid))
-    } else {
-      ({ nx, ny } = unitNormal(posA, posB))
-    }
+      let nx, ny
+      if (w.kind === 'capital') {
+        ({ nx, ny } = outwardNormal(posA, posB, capCentroid))
+      } else {
+        ({ nx, ny } = unitNormal(posA, posB))
+      }
 
-    const offNormalPx = (dim.offsetNormalPx ?? 14) * invScale
-    const offCapExtraPx = (dim.offsetCapitalExtraPx ?? 14) * invScale
+      const offNormalPx = (dim.offsetNormalPx ?? 14) * invScale
+      const offCapExtraPx = (dim.offsetCapitalExtraPx ?? 14) * invScale
 
-    const offsetFromWall =
-      (w.kind === 'capital')
-        ? (CAP_W / 2) + offCapExtraPx
-        : offNormalPx
+      const offsetFromWall =
+        (w.kind === 'capital')
+          ? (CAP_W / 2) + offCapExtraPx
+          : offNormalPx
 
-    const lx = mid.x + nx * offsetFromWall
-    const ly = mid.y + ny * offsetFromWall
+      const lx = mid.x + nx * offsetFromWall
+      const ly = mid.y + ny * offsetFromWall
 
-    const isSelected = w.id && w.id === state.selectedWallId
-    const fillText = isSelected ? config.theme.wall.selected : config.theme.dim.text
+      const isSelected = w.id && w.id === state.selectedWallId
+      const fillText = isSelected ? config.theme.wall.selected : config.theme.dim.text
 
-    const t = dimsG.text(txt)
-    t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
-    t.fill(fillText)
+      const t = dimsG.text(txt)
+      t.font({ size: fontSize, family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial' })
+      t.fill(fillText)
 
-    const bb = t.bbox()
-    const bg = dimsG
-      .rect(bb.width + pad * 2, bb.height + pad * 2)
-      .fill({
-        color: config.theme.dim.bg,
-        opacity: (config.render?.dim?.bgOpacity ?? config.theme.dim.bgOpacity ?? 0.75),
-      })
-      .radius(3 * invScale)
-
-    const g = dimsG.group()
-    g.add(bg)
-    g.add(t)
-
-    bg.move(lx - bb.width / 2 - pad, ly - bb.height / 2 - pad)
-    t.center(lx, ly)
-
-    g.rotate(ang, lx, ly)
-  }
-
-  // "inside box" label
-  {
-    const box = config.render?.boxLabel || { enabled: true }
-    if (box.enabled) {
-      const bb = getCapitalBBox(walls)
-      if (bb) {
-        const Wm = unitsToMeters(bb.maxX - bb.minX)
-        const Hm = unitsToMeters(bb.maxY - bb.minY)
-
-        const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
-
-        const fontSize2 = (box.fontPx ?? 13) * invScale
-        const pad2 = (box.padPx ?? 4) * invScale
-        const rx = (box.radiusPx ?? 6) * invScale
-        const offsetY = (box.offsetPx ?? 70) * invScale
-
-        const cx = (bb.minX + bb.maxX) / 2
-        const y = bb.minY - offsetY
-
-        const g = dimsG.group()
-
-        const t = g.text(label)
-        t.font({
-          size: fontSize2,
-          family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
-          weight: 600,
+      const bb = t.bbox()
+      const bg = dimsG
+        .rect(bb.width + pad * 2, bb.height + pad * 2)
+        .fill({
+          color: config.theme.dim.bg,
+          opacity: (config.render?.dim?.bgOpacity ?? config.theme.dim.bgOpacity ?? 0.75),
         })
-        t.fill(config.theme.dim.text)
+        .radius(3 * invScale)
 
-        const tb = t.bbox()
-        const bg = g
-          .rect(tb.width + pad2 * 2, tb.height + pad2 * 2)
-          .fill({
-            color: config.theme.dim.bg,
-            opacity: (box.bgOpacity ?? 0.9),
+      const g = dimsG.group()
+      g.add(bg)
+      g.add(t)
+
+      bg.move(lx - bb.width / 2 - pad, ly - bb.height / 2 - pad)
+      t.center(lx, ly)
+
+      g.rotate(ang, lx, ly)
+    }
+
+    // "inside box" label
+    {
+      const box = config.render?.boxLabel || { enabled: true }
+      if (box.enabled) {
+        const bb = getCapitalBBox(walls)
+        if (bb) {
+          const Wm = unitsToMeters(bb.maxX - bb.minX)
+          const Hm = unitsToMeters(bb.maxY - bb.minY)
+
+          const label = `Коробка: ${Wm.toFixed(2)} × ${Hm.toFixed(2)} м`
+
+          const fontSize2 = (box.fontPx ?? 13) * invScale
+          const pad2 = (box.padPx ?? 4) * invScale
+          const rx = (box.radiusPx ?? 6) * invScale
+          const offsetY = (box.offsetPx ?? 70) * invScale
+
+          const cx = (bb.minX + bb.maxX) / 2
+          const y = bb.minY - offsetY
+
+          const g = dimsG.group()
+
+          const t = g.text(label)
+          t.font({
+            size: fontSize2,
+            family: 'system-ui, -apple-system, Segoe UI, Roboto, Arial',
+            weight: 600,
           })
-          .radius(rx)
+          t.fill(config.theme.dim.text)
 
-        bg.center(cx, y)
-        t.center(cx, y)
-        bg.back()
+          const tb = t.bbox()
+          const bg = g
+            .rect(tb.width + pad2 * 2, tb.height + pad2 * 2)
+            .fill({
+              color: config.theme.dim.bg,
+              opacity: (box.bgOpacity ?? 0.9),
+            })
+            .radius(rx)
+
+          bg.center(cx, y)
+          t.center(cx, y)
+          bg.back()
+        }
       }
     }
   }
@@ -1067,6 +1070,8 @@ export function render(draw) {
   }
 
   // ---- room labels ----
+  if (!showM) return
+
   const rooms = computeRooms({ minAreaM2: config.rooms.minAreaM2 })
 
   let roomsG = overlayG.findOne('#room-labels')

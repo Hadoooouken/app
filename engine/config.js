@@ -211,7 +211,7 @@ export const config = {
             padPx: 3,
 
             offsetNormalPx: 14,
-            offsetCapitalExtraPx: 14,
+            offsetCapitalExtraPx: 20,
         },
 
         // Плашка “Коробка: W × H м” (можно выключать)

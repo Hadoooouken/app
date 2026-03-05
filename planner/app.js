@@ -800,10 +800,35 @@ function updateDoorButtonState() {
 function updateStatus() {
   if (!status) return
 
+  const showM = state.ui?.showMetrics !== false
+
   const area = capitalAreaM2()
   const sum = totalNormalLengthM()
   const sel = getSelectedWall()
 
+  if (!showM) {
+    // без цифр
+    if (state.mode === 'draw-wall') {
+      status.textContent = `Режим: Wall`
+      return
+    }
+    if (state.selectedDoorId) {
+      status.textContent = `Select | Door: ${state.selectedDoorId}`
+      return
+    }
+    if (state.selectedFurnitureId) {
+      status.textContent = `Select | Furniture: ${state.selectedFurnitureId}`
+      return
+    }
+    if (sel) {
+      status.textContent = `Select | ${sel.id}`
+      return
+    }
+    status.textContent = `Select`
+    return
+  }
+
+  // как было — с цифрами
   if (state.mode === 'draw-wall') {
     status.textContent = `Режим: Wall | Сумма стен: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
     return
@@ -814,6 +839,11 @@ function updateStatus() {
     return
   }
 
+  if (state.selectedFurnitureId) {
+    status.textContent = `Select | Furniture: ${state.selectedFurnitureId} | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
+    return
+  }
+
   if (sel) {
     const len = wallLengthM(sel)
     status.textContent = `Select | ${sel.id}: ${fmtM(len)} м | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
@@ -821,13 +851,15 @@ function updateStatus() {
     status.textContent = `Select | Сумма normal: ${fmtM(sum)} м | Площадь: ${fmtM2(area)} м²`
   }
 }
-
+const btnMetrics = document.getElementById('btn-metrics')
 // ---------------- mode helpers ----------------
 function setMode(mode) {
   const prev = state.mode
 
   // ui всегда должен существовать
   state.ui ??= {}
+
+
 
   // ✅ КРИТИЧНО: если dragged остался true после панорамирования —
   // pointerdown в idle будет игнориться (у тебя стоит guard).
@@ -888,6 +920,7 @@ function setMode(mode) {
   syncUI()
   rerender()
 }
+
 function syncUI() {
   const isWall = state.mode === 'draw-wall'
   const isDoor = state.mode === 'draw-door'
@@ -896,6 +929,7 @@ function syncUI() {
   btnWall?.classList.toggle('is-active', isWall)
   btnDoor?.classList.toggle('is-active', isDoor)
   btnFurniture?.classList.toggle('is-active', isFurn)
+  btnMetrics?.classList.toggle('is-active', !!state.ui?.showMetrics)
 
   if (!hint) return
 
@@ -920,6 +954,16 @@ function syncUI() {
 btnWall?.addEventListener('click', () =>
   setMode(state.mode === 'draw-wall' ? 'idle' : 'draw-wall')
 )
+  // по умолчанию показываем
+  state.ui ??= {}
+  state.ui.showMetrics = state.ui.showMetrics ?? true
+
+  btnMetrics?.addEventListener('click', (e) => {
+    e.preventDefault()
+    state.ui.showMetrics = !state.ui.showMetrics
+    syncUI()
+    rerender()
+  })
 
 btnDoor?.addEventListener('click', (e) => {
   e.preventDefault()
