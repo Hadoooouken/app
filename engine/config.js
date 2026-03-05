@@ -290,9 +290,9 @@ export const config = {
 
         window: {
             // цвет проёма/стекла
-            fill: 'rgba(160, 210, 255, 0.85)',
+            fill: '#2a4f3d',
             // обводка
-            stroke: 'rgba(40, 90, 140, 0.9)',
+            stroke: '#2a4f3d',
         },
 
         // Цвет линий сетки
