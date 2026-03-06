@@ -247,11 +247,9 @@ const furnMenu = document.getElementById('furniture-menu')
 let furnitureSpriteReady = false
 
 function hideFurnitureMenu() {
-  furnMenu?.classList.add('is-hidden')
+  furnMenu?.classList.remove('is-open')
 }
-function toggleFurnitureMenu() {
-  furnMenu?.classList.toggle('is-hidden')
-}
+
 
 loadFurnitureSpriteIntoDefs(draw).then(() => {
   furnitureSpriteReady = true
@@ -313,26 +311,17 @@ buildFurnitureMenu()
 btnFurniture?.addEventListener('click', (e) => {
   e.preventDefault()
 
-  // если мы уже в режиме постановки мебели — кнопка выключает режим
-  if (state.mode === 'draw-furniture') {
-    state.draftFurnitureTypeId = null
-    setMode('idle')
-    hideFurnitureMenu()
-    return
-  }
-
-  // если мы сейчас рисуем стену/дверь — сначала выходим в idle
+  // если сейчас режим стен/дверей — выходим в idle,
+  // а само меню откроет отдельный submenu-скрипт
   if (state.mode === 'draw-wall' || state.mode === 'draw-door') {
     setMode('idle')
   }
 
-  // если спрайт ещё не подгрузился — просто сообщим
   if (!furnitureSpriteReady) {
     if (hint) hint.textContent = 'Загружаю мебель…'
+    e.stopPropagation()
     return
   }
-
-  toggleFurnitureMenu()
 })
 
 // клик вне меню — закрыть
