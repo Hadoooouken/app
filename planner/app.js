@@ -244,6 +244,12 @@ const status = document.getElementById('status')
 const btnFurniture = document.getElementById('btn-furniture')
 const furnMenu = document.getElementById('furniture-menu')
 
+const submenuOptions = document.getElementById('submenu-options')
+
+function hideOptionsMenu() {
+  submenuOptions?.classList.remove('is-open')
+}
+
 let furnitureSpriteReady = false
 
 function hideFurnitureMenu() {
@@ -972,6 +978,7 @@ btnMetrics?.addEventListener('click', (e) => {
   state.ui.showMetrics = !state.ui.showMetrics
   syncUI()
   rerender()
+  hideOptionsMenu()
 })
 
 btnDoor?.addEventListener('click', (e) => {
@@ -1356,6 +1363,7 @@ function resetToTemplate() {
 btnReset?.addEventListener('click', (e) => {
   e.preventDefault()
   resetToTemplate()
+  hideOptionsMenu()
 })
 
 btnUndo?.addEventListener('click', (e) => {
