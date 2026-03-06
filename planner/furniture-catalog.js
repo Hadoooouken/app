@@ -4,11 +4,8 @@ export const FURN_CATEGORIES = [
         id: 'living',
         label: 'Гостиная/спальня',
         items: [
-            { typeId: 'sofa', label: 'Диван', symbolId: 'divan', w: 200, h: 90 },
-            { typeId: 'bed', label: 'Кровать', symbolId: 'f-sofa', w: 200, h: 160 },
-
-
-
+            { typeId: 'sofa', label: 'Диван', symbolId: 'mebel-divan-big', w: 200, h: 100 },
+            { typeId: 'bed', label: 'Кровать', symbolId: 'bed-big', w: 200, h: 160 },
         ],
     },
     {
