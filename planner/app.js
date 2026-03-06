@@ -266,26 +266,46 @@ function buildFurnitureMenu() {
   furnMenu.innerHTML = ''
 
   for (const cat of FURN_CATEGORIES) {
-    const h = document.createElement('div')
-    h.className = 'fmenu__cat'
-    h.textContent = cat.label
-    furnMenu.appendChild(h)
+    const group = document.createElement('div')
+    group.className = 'group'
+
+    const title = document.createElement('div')
+    title.className = 'group-label'
+    title.textContent = cat.label
+    group.appendChild(title)
+
+    const items = document.createElement('div')
+    items.className = 'group-items'
 
     for (const it of cat.items) {
       const row = document.createElement('div')
-      row.className = 'fmenu__item'
-      row.innerHTML = `<span>${it.label}</span><span>${(it.w / 100).toFixed(2)}×${(it.h / 100).toFixed(2)}м</span>`
+      row.setAttribute('data-button', `add-furniture-${it.typeId}`)
+
+      const label = document.createElement('div')
+      label.className = 'label'
+      label.textContent = it.label
+
+      const size = document.createElement('div')
+      size.className = 'size'
+      size.textContent = `${(it.w / 100).toFixed(1)}x${(it.h / 100).toFixed(1)}м`
+
+      row.appendChild(label)
+      row.appendChild(size)
 
       row.addEventListener('click', () => {
         state.draftFurnitureTypeId = it.typeId
         setMode('draw-furniture')
         hideFurnitureMenu()
+
         const p0 = lastPointerWorld || getViewportCenterWorld()
-        spawnFurniturePreviewAtPoint(p0) // ✅ сразу под курсором (или центр если курсора нет)
+        spawnFurniturePreviewAtPoint(p0)
       })
 
-      furnMenu.appendChild(row)
+      items.appendChild(row)
     }
+
+    group.appendChild(items)
+    furnMenu.appendChild(group)
   }
 }
 buildFurnitureMenu()
@@ -954,16 +974,16 @@ function syncUI() {
 btnWall?.addEventListener('click', () =>
   setMode(state.mode === 'draw-wall' ? 'idle' : 'draw-wall')
 )
-  // по умолчанию показываем
-  state.ui ??= {}
-  state.ui.showMetrics = state.ui.showMetrics ?? true
+// по умолчанию показываем
+state.ui ??= {}
+state.ui.showMetrics = state.ui.showMetrics ?? true
 
-  btnMetrics?.addEventListener('click', (e) => {
-    e.preventDefault()
-    state.ui.showMetrics = !state.ui.showMetrics
-    syncUI()
-    rerender()
-  })
+btnMetrics?.addEventListener('click', (e) => {
+  e.preventDefault()
+  state.ui.showMetrics = !state.ui.showMetrics
+  syncUI()
+  rerender()
+})
 
 btnDoor?.addEventListener('click', (e) => {
   e.preventDefault()
@@ -1185,13 +1205,22 @@ window.addEventListener('keydown', (e) => {
   const mod = isMac ? e.metaKey : e.ctrlKey
   if (!mod) return
 
-  if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
+  const key = e.key.toLowerCase()
+  const code = e.code
+
+  // Undo: Ctrl/Cmd + Z
+  if ((key === 'z' || code === 'KeyZ') && !e.shiftKey) {
     e.preventDefault()
     if (undo()) rerender()
     return
   }
 
-  if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') {
+  // Redo: Ctrl/Cmd + Shift + Z  или Ctrl/Cmd + Y
+  if (
+    ((key === 'z' || code === 'KeyZ') && e.shiftKey) ||
+    key === 'y' ||
+    code === 'KeyY'
+  ) {
     e.preventDefault()
     if (redo()) rerender()
     return

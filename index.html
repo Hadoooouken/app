@@ -1,78 +1,201 @@
-<!doctype html>
-<html lang="ru">
+<!DOCTYPE html>
+<html>
 
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Planner</title>
-  <link rel="stylesheet" href="./styles.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <title>PLANNER</title>
+    <link rel="stylesheet" type="text/css" href="./modern-normalize.min.css" />
+    <link rel="stylesheet" href="./styles.css" />
 </head>
 
-<body class="app">
-  <div id="workspace" class="workspace"></div>
+<body>
+    <div id="workspace"></div>
 
-  <!-- LEFT PANEL -->
-  <aside class="panel">
-    <div class="panel__title">Planner</div>
-
-    <button id="btn-wall" class="tool" type="button">
-      <span class="tool__icon">🧱</span>
-      <span class="tool__label">Добавить стену</span>
-    </button>
-    <button id="btn-door" class="tool" type="button">
-      <span class="tool__icon">🚪</span>
-      <span class="tool__label">Добавить дверь</span>
-    </button>
-    <button id="btn-furniture" class="btn tool">Мебель</button>
-    <div id="furniture-menu" class="fmenu is-hidden"></div>
-
-
-    <button id="btn-trash" type="button" class="tool">
-      <span class="tool__icon">🗑</span>
-      <span class="tool__label">Удалить элемент</span>
-    </button>
-    <button id="btn-metrics" class="tool" type="button">
-      <span class="tool__icon">📏</span>
-      <span class="tool__label">Размеры</span>
-    </button>
-
-
-    <div class="panel__divider"></div>
-
-    <div class="panel__hint" id="hint">
-      Select: просто смотри.
+    <div class="app-ui app-ui-left">
+        <div class="main">
+            <div class="button" data-button="menu">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-menu"></use>
+                    </svg></div>
+                <div class="label">Опции</div>
+            </div>
+            <div class="button mobile-only" data-button="mode-select">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-cursor"></use>
+                    </svg></div>
+                <div class="label">Выделение</div>
+            </div>
+            <div class="button mobile-only active" data-button="mode-move">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-move"></use>
+                    </svg></div>
+                <div class="label">Перемещение</div>
+            </div>
+            <div class="button with-sub" data-button="build">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-wall"></use>
+                    </svg></div>
+                <div class="label">Строительство</div>
+            </div>
+            <div id="btn-furniture" class="button with-sub" data-button="mebel">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-sofa"></use>
+                    </svg></div>
+                <div class="label">Мебель</div>
+            </div>
+            <div id="undo" class="button inactive" data-button="undo">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-undo"></use>
+                    </svg></div>
+                <div class="label">Отменить</div>
+            </div>
+            <div id="btn-trash" class="button inactive" data-button="trash">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-trash"></use>
+                    </svg></div>
+                <div class="label">Удалить</div>
+            </div>
+        </div>
     </div>
-  </aside>
 
-
-  <div class="hud">
-    <div class="zoom">
-      <button class="zoom__btn" id="undo" type="button" title="Undo (Ctrl/⌘+Z)" aria-label="Undo">
-        <img class="zoom__icon" src="./images/icons/undo.svg" alt="" aria-hidden="true">
-      </button>
-
-      <button class="zoom__btn" id="redo" type="button" title="Redo (Ctrl/⌘+Y or Ctrl/⌘+Shift+Z)" aria-label="Redo">
-        <img class="zoom__icon" src="./images/icons/redo.svg" alt="" aria-hidden="true">
-      </button>
-
-
-      
-      <button class="zoom__btn" id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">＋</button>
-      <button class="zoom__btn" id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
-      <button id="btn-reset" class="tool">Reset</button>
+    <div class="app-ui app-ui-right">
+        <div class="main">
+            <div id="zoom-in" class="button" data-button="zoom-in">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-zoom-in"></use>
+                    </svg></div>
+            </div>
+            <div id="zoom-reset" class="button" data-button="zoom-centred">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-zoom-centred"></use>
+                    </svg></div>
+            </div>
+            <div id="zoom-out" class="button" data-button="zoom-out">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-zoom-out"></use>
+                    </svg></div>
+            </div>
+        </div>
     </div>
-    <!-- <div class="dpad" id="dpad">
-      <button class="dpad__btn dpad__btn--up" data-pan="up" type="button" aria-label="Up">↑</button>
-      <button class="dpad__btn dpad__btn--left" data-pan="left" type="button" aria-label="Left">←</button>
-      <button class="dpad__btn dpad__btn--center" data-pan="center" type="button" aria-label="Center">⦿</button>
-      <button class="dpad__btn dpad__btn--right" data-pan="right" type="button" aria-label="Right">→</button>
-      <button class="dpad__btn dpad__btn--down" data-pan="down" type="button" aria-label="Down">↓</button>
+
+    <div class="sub-menu" data-parent-button="build">
+        <div class="main">
+            <div id="btn-wall" class="button" data-button="add-wall">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-wall"></use>
+                    </svg></div>
+                <div class="label">Стена</div>
+            </div>
+            <div id="btn-door" class="button" data-button="add-door">
+                <div class="icon"><svg>
+                        <use href="/tmp/sprite.svg#ui-door"></use>
+                    </svg></div>
+                <div class="label">Дверь</div>
+            </div>
+        </div>
+    </div>
+    <div id="furniture-menu" class="sub-menu grouped" data-parent-button="mebel"></div>
+    <!-- <div class="sub-menu grouped" data-parent-button="mebel">
+        <div class="group">
+            <div class="group-label">Кухня</div>
+            <div class="group-items">
+                <div data-button="add-furniture-1">
+                    <div class="label">Кухонный стол</div>
+                    <div class="size">3.0x2.0м</div>
+                </div>
+                <div data-button="add-furniture-2">
+                    <div class="label">Кухонный стол</div>
+                    <div class="size">2.0x1.5м</div>
+                </div>
+                <div data-button="add-furniture-3">
+                    <div class="label">Кухонный стол</div>
+                    <div class="size">2.0x2.0м</div>
+                </div>
+                <div data-button="add-furniture-4">
+                    <div class="label">Кухонный стол</div>
+                    <div class="size">1.5x1.0м</div>
+                </div>
+                <div data-button="add-furniture-5">
+                    <div class="label">Гарнитур прямой</div>
+                    <div class="size">3.0x0.6м</div>
+                </div>
+                <div data-button="add-furniture-6">
+                    <div class="label">Гарнитур угловой</div>
+                    <div class="size">3.0x1.8м</div>
+                </div>
+            </div>
+        </div>
+        <div class="group">
+            <div class="group-label">Гостиная/спальня</div>
+            <div class="group-items">
+                <div data-button="add-furniture-7">
+                    <div class="label">Кровать двуспальная</div>
+                    <div class="size">2.2x2.0м</div>
+                </div>
+                <div data-button="add-furniture-8">
+                    <div class="label">Кровать односпальная</div>
+                    <div class="size">2.0x0.9м</div>
+                </div>
+                <div data-button="add-furniture-9">
+                    <div class="label">Диван прямой большой</div>
+                    <div class="size">3.0x0.9м</div>
+                </div>
+                <div data-button="add-furniture-10">
+                    <div class="label">Диван прямой</div>
+                    <div class="size">2.0x0.9м</div>
+                </div>
+                <div data-button="add-furniture-11">
+                    <div class="label">Диван угловой большой</div>
+                    <div class="size">3.0x2.0м</div>
+                </div>
+                <div data-button="add-furniture-12">
+                    <div class="label">Диван угловой</div>
+                    <div class="size">2.0x1.0м</div>
+                </div>
+            </div>
+        </div>
+        <div class="group">
+            <div class="group-label">Ванная</div>
+            <div class="group-items">
+                <div data-button="add-furniture-13">
+                    <div class="label">Унитаз</div>
+                    <div class="size">2.2x2.0м</div>
+                </div>
+                <div data-button="add-furniture-14">
+                    <div class="label">Раковина</div>
+                    <div class="size">2.0x0.9м</div>
+                </div>
+                <div data-button="add-furniture-15">
+                    <div class="label">Ванна</div>
+                    <div class="size">3.0x0.9м</div>
+                </div>
+                <div data-button="add-furniture-16">
+                    <div class="label">Душевая кабина</div>
+                    <div class="size">2.0x0.9м</div>
+                </div>
+            </div>
+        </div>
     </div> -->
-  </div>
 
-  <div class="status" id="status">Готово</div>
-
-  <script type="module" src="./planner/app.js"></script>
+    <div class="sub-menu grouped" data-parent-button="menu">
+        <div class="group">
+            <div class="group-label">Опции</div>
+            <div class="group-items">
+                <div id="btn-metrics" data-button="metrics">
+                    <div class="label">Скрыть/показать размеры</div>
+                    <div class="size"></div>
+                </div>
+                <div id="btn-reset" data-button="reset">
+                    <div class="label">Очистить сцену</div>
+                    <div class="size"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="./script.js"></script>
+    <script type="module" src="./planner/app.js"></script>
 </body>
 
 </html>

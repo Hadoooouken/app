@@ -1,578 +1,267 @@
-:root {
-  --bg: #f2eee5;
-  --panel: rgba(255, 255, 255, 0.92);
-  --stroke: rgba(0, 0, 0, 0.12);
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-  --accent: #0a84ff;
-  --text: #1f2937;
-  --muted: rgba(31, 41, 55, 0.65);
-  --radius: 16px;
-
-  /* ====== FIT / SCALE TUNING (NEW) ====== */
-  --planner-pad-inline: 10; /* % слева/справа (меньше = крупнее) */
-  --planner-pad-block: 10; /* % сверху/снизу (меньше = крупнее) */
-
-  /* clamp padding в px (защита от слишком малого/большого) */
-  --planner-pad-min: 18;
-  --planner-pad-max: 260;
-
-  /* maxScale для fitToWalls */
-  --planner-max-scale: 1.15;
-
-  /* общий “буст” для fit (0.95 = чуть крупнее, 1.05 = чуть мельче) */
-  --planner-fit-mult: 1;
-
-  /* ✅ базовые отступы + safe-area */
-  --pad: 16px;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
-
-  /* ✅ размеры контролов на мобиле */
-  --btn: 44px;
-  --btn-r: 14px;
-  --gap: 10px;
-
-  /* ✅ ширина правого стека (3 кнопки dpad) */
-  --stack-w: calc(var(--btn) * 3 + var(--gap) * 2);
-
-  /* твоя ручка поднять/опустить верхний UI */
-  --ui-top-shift: 50px; /* + вниз, - вверх */
-}
-
-/* ====== ПРЕСЕТЫ (NEW) ====== */
-/* МОБИЛА — план крупнее */
-@media (max-width: 768px) {
-  :root {
-    --planner-pad-inline: 5;
-    --planner-pad-block: 6;
-    --planner-max-scale: 1.25;
-    --planner-fit-mult: 0.95;
-  }
-}
-
-/* ПЛАНШЕТ 769–1023 — умеренно */
-@media (min-width: 769px) and (max-width: 1023px) {
-  :root {
-    --planner-pad-inline: 7;
-    --planner-pad-block: 8;
-    --planner-max-scale: 1.18;
-    --planner-fit-mult: 1;
-  }
-}
-
-/* RESET */
-* {
-  box-sizing: border-box;
-}
-html,
-body {
-  height: 100%;
-  margin: 0;
-}
-
-body {
-  font-family:
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Arial,
-    sans-serif;
-  background: var(--bg);
-  overflow: hidden;
-}
-
 #workspace {
-  width: 100vw;
-  height: 100vh;
-}
-
-/* WORKSPACE */
-.workspace {
   position: fixed;
   inset: 0;
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
-/* чтобы цифры/подписи не выделялись при drag */
-.workspace,
-.workspace * {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* отключает double-tap zoom на UI, но не ломает клики */
-#workspace,
-.workspace,
-.panel,
-.zoom,
-.dpad,
-.status {
-  touch-action: manipulation;
-}
-
-/* =========================
-   PANEL (MOBILE BASE)
-========================= */
-
-button,
-.zoom__btn,
-.dpad__btn,
-.tool {
-  -webkit-appearance: none;
-  appearance: none;
-  border: 1px solid var(--stroke);
-  background: var(--panel);
-  color: #111; /* ✅ принудительно НЕ синий */
-  font: inherit; /* ✅ не подхватывать системные символы */
-  line-height: 1; /* ✅ чтобы значки не “прыгали” */
-  text-align: center;
-}
-
-/* иногда Safari красит именно текст внутри */
-.zoom__btn,
-.zoom__btn * {
-  color: #111;
-}
-
-/* если где-то случайно стала ссылкой/тап-хайлайт */
-.zoom__btn {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* чтобы ↶↷ выглядели “как надо”, можно зафиксить начертание */
-.zoom__btn {
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0;
-}
-
-.zoom__btn .icon {
-  width: 22px;
-  height: 22px;
-  display: block;
-  margin: 0 auto;
-  color: #111; /* берется currentColor */
-}
-
-.panel {
-  position: fixed;
-  left: calc(var(--pad) + var(--safe-left));
-  right: calc(var(--pad) + var(--safe-right));
-  bottom: calc(var(--pad) + var(--safe-bottom));
-  padding: 14px;
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: 20px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 10;
-}
-
-.panel__title,
-.panel__hint {
-  display: none;
-}
-
-.tool {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1px solid var(--stroke);
-  background: #fff;
-  cursor: pointer;
-  transition: 0.15s;
-  font-size: 14px;
-}
-
-.tool.is-active {
-  background: color-mix(in oklab, var(--accent), #fff 88%);
-  border-color: var(--accent);
-}
-
-.tool__label {
-  display: none;
-}
-
-.tool.is-disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.tool.is-danger {
-  background: #ff3b30;
-  color: #fff;
-}
-
-/* кнопки — центрируем контент (и текст, и иконки) */
-.zoom__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+body {
+  margin: 0;
   padding: 0;
-}
-
-/* размер SVG-иконки внутри кнопки */
-.zoom__icon {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
-/* iOS Safari: не даём кнопкам менять вид и красить контент */
-button,
-.zoom__btn,
-.dpad__btn,
-.tool {
-  -webkit-appearance: none;
-  appearance: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* на всякий случай фиксируем цвет внутри кнопки */
-.zoom__btn,
-.zoom__btn * {
-  color: #111;
-  fill: currentColor;
-  stroke: currentColor;
-}
-
-/* =========================
-   STATUS (TOP)
-   ✅ не лезет под правые кнопки
-========================= */
-
-.status {
-  position: fixed;
-  top: calc(var(--pad) + var(--safe-top));
-  left: calc(var(--pad) + var(--safe-left));
-  right: calc(var(--pad) + var(--safe-right) + var(--stack-w) + 12px);
-  padding: 8px 14px;
-  background: var(--panel);
-  border: 1px solid var(--stroke);
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--muted);
-  z-index: 10;
-
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* =========================
-   ZOOM (RIGHT TOP)
-========================= */
-
-.zoom {
-  position: fixed;
-  right: calc(var(--pad) + var(--safe-right));
-  top: calc(var(--pad) + var(--safe-top));
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  z-index: 10;
-  column-gap: 0.625rem;
-  row-gap: 0.3125rem;
-}
-
-.zoom__btn {
-  width: var(--btn);
-  height: var(--btn);
-  border-radius: var(--btn-r);
-  border: 1px solid var(--stroke);
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  font-size: 18px;
-}
-
-.zoom__btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.zoom__sep {
-  width: 1px;
-  height: 18px;
-  opacity: 0.25;
-  background: currentColor;
-  margin: 2px auto;
-}
-
-/* =========================
-   DPAD (RIGHT, BELOW ZOOM)
-========================= */
-
-.dpad {
-  position: fixed;
-  right: calc(var(--pad) + var(--safe-right));
-  top: calc(var(--pad) + var(--safe-top) + (var(--btn) * 4) + (var(--gap) * 3) + 14px);
-  z-index: 10;
-
-  display: grid;
-  grid-template-columns: var(--btn) var(--btn) var(--btn);
-  grid-template-rows: var(--btn) var(--btn) var(--btn);
-  gap: var(--gap);
-
-  user-select: none;
+  height: 100vh;
   -webkit-user-select: none;
-  touch-action: manipulation;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: var(--bg);
 }
 
-.dpad__btn {
-  width: var(--btn);
-  height: var(--btn);
-  border-radius: var(--btn-r);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background-color: #ffffff;
-  color: #04202b;
-  font-size: 20px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-  transition:
-    transform 0.06s ease,
-    filter 0.15s;
-  -webkit-tap-highlight-color: transparent;
-  outline: none;
+:root {
+  --ui-text-color: #1f2937;
+  --ui-muted-color: #cccccc;
+  --ui-accent-color: #4274cb;
+  --ui-icon-bg: #f9fafb;
+  --ui-panel-bg: #efefef;
+  --ui-red-color: #ff2317;
+  --bg: #f2eee5;
 }
 
-.dpad__btn:active,
-.dpad__btn.is-pressed {
-  transform: translateY(1px) scale(0.98);
-  filter: brightness(0.92);
-}
-
-.dpad__btn--up {
-  grid-column: 2;
-  grid-row: 1;
-}
-.dpad__btn--left {
-  grid-column: 1;
-  grid-row: 2;
-}
-.dpad__btn--center {
-  grid-column: 2;
-  grid-row: 2;
-  color: #111;
-}
-.dpad__btn--right {
-  grid-column: 3;
-  grid-row: 2;
-}
-.dpad__btn--down {
-  grid-column: 2;
-  grid-row: 3;
-}
-
-#walls line {
-  transition:
-    stroke 0.3s ease,
-    stroke-width 0.3s ease,
-    opacity 0.3s ease;
-}
-
-/* =========================
-   FURNITURE MENU
-========================= */
-
-.fmenu {
-  position: absolute;
-  top: 70px;
-  left: 20px;
-  background: #fff;
-  border: 1px solid #ddd;
+.app-ui,
+.sub-menu:not(.grouped) {
+  position: fixed;
+  top: 50%;
+  z-index: 10;
+  padding: 8px 10px;
+  background: var(--ui-panel-bg);
   border-radius: 10px;
-  padding: 10px;
-  width: 260px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-  z-index: 50;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transform: translateY(-50%);
+  border: 1px #e1e1e1 solid;
 }
 
-.fmenu.is-hidden {
+.app-ui-left {
+  left: 20px;
+}
+
+.app-ui-right {
+  right: 20px;
+}
+
+.app-ui .main,
+.sub-menu:not(.grouped) .main {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.app-ui-right .main {
+  gap: 8px;
+}
+
+.app-ui .button,
+.sub-menu:not(.grouped) .button {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  cursor: pointer;
+  color: var(--ui-text-color);
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+  border-radius: 10px;
+}
+
+.app-ui .button.mobile-only,
+.sub-menu:not(.grouped) .button.mobile-only {
   display: none;
 }
 
-.fmenu__cat {
-  font-weight: 700;
-  margin: 8px 0;
+.app-ui .icon,
+.sub-menu:not(.grouped) .icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 5px;
+  background: var(--ui-icon-bg);
+  border-radius: 8px;
+}
+.app-ui-right .icon {
+  margin-bottom: 0;
 }
 
-.fmenu__item {
+.app-ui .icon svg,
+.sub-menu:not(.grouped) .icon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--ui-text-color);
+  transition: color 0.3s ease;
+}
+
+.app-ui .button:hover .icon svg,
+.sub-menu:not(.grouped) .button:hover .icon svg {
+  color: var(--ui-accent-color);
+}
+
+.app-ui .button.inactive,
+.sub-menu:not(.grouped) .button.inactive {
+  cursor: default;
+  color: var(--ui-muted-color);
+}
+
+.app-ui .button.inactive .icon svg,
+.sub-menu:not(.grouped) .button.inactive .icon svg {
+  color: var(--ui-muted-color);
+}
+.app-ui .button.active .icon svg,
+.sub-menu:not(.grouped) .button.active .icon svg {
+  color: var(--ui-accent-color) !important;
+}
+.app-ui .button[data-button='trash'].active .icon {
+  background-color: var(--ui-red-color);
+}
+.app-ui .button[data-button='trash'].active .icon svg {
+  color: #ffffff !important;
+}
+
+.sub-menu {
+  display: none;
+  position: fixed;
+  z-index: 15;
+}
+
+.sub-menu:not(.grouped) {
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+.sub-menu.grouped {
+  padding: 12px 15px;
+  background-color: var(--ui-panel-bg);
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  border: 1px #e1e1e1 solid;
+}
+
+.sub-menu.is-open {
+  display: block;
+}
+.sub-menu > .group {
+  margin-top: 15px;
+}
+.sub-menu > .group:first-child {
+  margin-top: 0;
+}
+.sub-menu .group-label {
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 5px;
+  border-bottom: 1px #e1e1e1 solid;
+  padding-bottom: 5px;
+}
+.sub-menu .group-items {
+  display: flex;
+  flex-direction: column;
+}
+.sub-menu .group-items > div {
   display: flex;
   justify-content: space-between;
-  padding: 6px 8px;
-  border-radius: 8px;
-  cursor: pointer;
+  margin-bottom: 8px;
+}
+.sub-menu .group-items > div:last-child {
+  margin-bottom: 0;
+}
+.sub-menu .group-items .size {
+  color: #999999;
+  margin-left: 15px;
 }
 
-.fmenu__item:hover {
-  background: #f3f5f7;
-}
-
-@media (hover: hover) {
-  .dpad__btn:hover {
-    filter: brightness(0.96);
-  }
-}
-
-/* =========================
-   TABLET 768+
-========================= */
-
-@media (min-width: 768px) {
-  .panel {
-    bottom: 24px;
+@media (max-width: 768px) {
+  .app-ui-left {
+    top: auto;
+    bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    right: auto;
-    width: 420px;
   }
 
-  .tool__label {
-    display: inline;
-  }
-
-  .status {
-    font-size: 13px;
-    left: 50%;
-    transform: translateX(-50%);
-    right: auto;
-    max-width: min(760px, calc(100vw - 320px));
-  }
-}
-
-/* =========================
-   <= 1023px: dpad рядом с zoom (в один ряд)
-   ⚠️ 1023.98px вместо 1023px — фикс для дробных viewport (масштаб/retina),
-   когда "1023" в UI может быть 1023.2..1023.9 в CSS-пикселях
-========================= */
-@media (max-width: 1023.98px) {
-  :root {
-    --zoom-w: calc(var(--btn) * 2 + 0.625rem); /* 2 кнопки + column-gap */
-  }
-
-  .zoom {
-    top: calc(var(--pad) + var(--safe-top) + var(--ui-top-shift));
-    right: calc(var(--pad) + var(--safe-right));
+  .app-ui-right {
+    top: 10px;
     bottom: auto;
-  }
-
-  .dpad {
-    top: 40px;
-    right: calc(var(--pad) + var(--safe-right) + var(--zoom-w) + 12px);
-  }
-
-  .status {
-    right: calc(var(--pad) + var(--safe-right) + var(--zoom-w) + 12px + var(--stack-w) + 12px);
-  }
-
-  /* меню над нижней панелью */
-  .fmenu {
-    top: -300px;
-  }
-}
-
-/* =========================
-   LAPTOP 1024+
-========================= */
-@media (min-width: 1024px) {
-  .panel {
-    top: 24px;
-    bottom: auto;
-    left: 24px;
-    right: auto;
+    right: 10px;
     transform: none;
-    width: 240px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    padding: 6px;
   }
 
-  .panel__title {
-    display: block;
-    font-weight: 700;
-    margin-bottom: 6px;
+  .app-ui-left .main {
+    flex-direction: row;
+    gap: 8px;
   }
 
-  .panel__hint {
-    display: block;
-    font-size: 13px;
-    color: var(--muted);
+  .app-ui-left .button.mobile-only {
+    display: flex;
   }
 
-  .tool {
-    justify-content: flex-start;
-    padding: 12px 14px;
+  .app-ui-left .button .label {
+    display: none;
   }
 
-  .zoom {
-    right: 24px;
-    bottom: 24px;
-    top: auto;
+  .sub-menu:not(.grouped) .main {
+    flex-direction: row;
+    gap: 8px;
   }
 
-  .dpad {
-    top: 24px;
-    right: 24px;
+  .sub-menu:not(.grouped) .button .label {
+    display: none;
   }
 
-  .status {
-    bottom: 24px;
-    top: auto;
-    left: 50%;
-    transform: translateX(-50%);
-    right: auto;
+  .app-ui .icon,
+  .sub-menu:not(.grouped) .icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 0;
   }
 
-  .fmenu {
-    top: 70px;
+  .app-ui .icon svg,
+  .sub-menu:not(.grouped) .icon svg {
+    width: 22px;
+    height: 22px;
+  }
+  .app-ui .button:hover .icon svg,
+  .sub-menu:not(.grouped) .button:hover .icon svg {
+    color: var(--ui-text-color);
+  }
+  .sub-menu.grouped .label,
+  .sub-menu.grouped .size {
+    font-size: 14px;
+  }
+
+  .app-ui-right .main {
+    gap: 6px;
+  }
+
+  .app-ui-right .icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .app-ui-right .icon svg {
+    width: 18px;
+    height: 18px;
   }
 }
-
-/* =========================
-   DESKTOP 1440+
-========================= */
-@media (min-width: 1440px) {
-  .panel {
-    width: 260px;
-    padding: 18px;
+@media (max-width: 360px) {
+  .app-ui-left .main {
+    gap: 6px;
   }
-
-  .tool {
-    padding: 14px 16px;
-    font-size: 15px;
+  .app-ui-left .icon,
+  .sub-menu:not(.grouped) .icon {
+    width: 36px;
+    height: 36px;
   }
-
-  .zoom__btn {
-    width: 50px;
-    height: 50px;
-    font-size: 20px;
-  }
-
-  :root {
-    --btn: 52px;
-    --gap: 10px;
-    --btn-r: 14px;
-  }
-
-  .dpad__btn {
-    font-size: 22px;
-  }
-
-  .status {
-    font-size: 14px;
+  .sub-menu .group-items > div {
+    margin-bottom: 5px;
   }
 }
