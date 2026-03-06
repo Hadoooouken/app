@@ -1,6 +1,14 @@
 import { state } from '../engine/state.js'
 import { render } from '../renderer/render.js'
 
+function isMobileUI() {
+  try {
+    return matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+  } catch {
+    return window.innerWidth <= 768
+  }
+}
+
 export function initViewport(draw) {
   const node = draw.node
 
@@ -16,13 +24,20 @@ export function initViewport(draw) {
   const THRESHOLD = 6 // px
 
   node.addEventListener('pointerdown', (e) => {
-    // ❌ в режиме рисования — пан не нужен
-    if (state.mode === 'draw-wall' || state.mode === 'draw-door') return
+    if (
+      state.mode === 'draw-wall' ||
+      state.mode === 'draw-door' ||
+      state.mode === 'draw-furniture'
+    ) return
+
     if (state.ui.lockPan) return
     if (e.button !== 0 && e.pointerType === 'mouse') return
 
-    // ✅ если нажали на интерактив (стена/дверь/хэндлы) — НЕ панорамируем
-    const hitInteractive = e.target?.closest?.('[data-wall-id], [data-door-id], [data-handle]')
+    if (isMobileUI() && state.mobileMode !== 'move') return
+
+    const hitInteractive = e.target?.closest?.(
+      '[data-wall-id], [data-door-id], [data-handle], [data-furniture-id], [data-furniture-rotate]'
+    )
     if (hitInteractive) return
 
     isDown = true

@@ -303,6 +303,11 @@ function buildFurnitureMenu() {
 
       row.addEventListener('click', () => {
         state.draftFurnitureTypeId = it.typeId
+
+        if (isMobileUI()) {
+          setMobileMode('select')
+        }
+
         setMode('draw-furniture')
         hideFurnitureMenu()
 
@@ -337,7 +342,7 @@ btnFurniture?.addEventListener('click', (e) => {
 
 // клик вне меню — закрыть
 document.addEventListener('pointerdown', (e) => {
-  if (!furnMenu || furnMenu.classList.contains('is-hidden')) return
+  if (!furnMenu || !furnMenu.classList.contains('is-open')) return
   const t = e.target
   if (t === btnFurniture || btnFurniture?.contains(t)) return
   if (furnMenu.contains(t)) return
@@ -801,7 +806,7 @@ function updateDeleteButtonState() {
 function updateDoorButtonState() {
   if (!btnDoor) return
   const ok = state.mode !== 'draw-wall' && state.mode !== 'draw-furniture'
-  btnDoor.classList.toggle('is-disabled', !ok)
+  btnDoor.classList.toggle('inactive', !ok)
 }
 
 function updateStatus() {
@@ -962,9 +967,32 @@ function syncUI() {
   hint.textContent = 'Клик по стене — выделить. Drag по стене/хэндлам — редактировать.'
 }
 
-btnWall?.addEventListener('click', () =>
-  setMode(state.mode === 'draw-wall' ? 'idle' : 'draw-wall')
-)
+btnWall?.addEventListener('click', (e) => {
+  e.preventDefault()
+
+  if (state.mode === 'draw-wall') {
+    setMode('idle')
+
+    if (isMobileUI()) {
+      hideBuildMenu?.()
+      returnToMobileMoveMode?.()
+    }
+
+    return
+  }
+
+  if (isMobileUI()) {
+    setMobileMode('select')
+  }
+
+  setMode('draw-wall')
+
+  if (isMobileUI()) {
+    hideBuildMenu?.()
+  }
+
+  scheduleRerender()
+})
 // по умолчанию показываем
 state.ui ??= {}
 state.ui.showMetrics = state.ui.showMetrics ?? true
@@ -976,14 +1004,22 @@ btnMetrics?.addEventListener('click', (e) => {
   rerender()
   hideOptionsMenu()
 })
-
 btnDoor?.addEventListener('click', (e) => {
   e.preventDefault()
 
   if (state.mode === 'draw-door') {
     setMode('idle')
-    hideBuildMenu()
+
+    if (isMobileUI()) {
+      hideBuildMenu()
+      returnToMobileMoveMode()
+    }
+
     return
+  }
+
+  if (isMobileUI()) {
+    setMobileMode('select')
   }
 
   setMode('draw-door')
@@ -1002,7 +1038,6 @@ btnDoor?.addEventListener('click', (e) => {
     side: +1,
   }
 
-  hideBuildMenu()
   scheduleRerender()
 })
 // ---------------- delete selected wall/door ----------------
@@ -1187,7 +1222,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   // просто закрыть меню, если оно открыто
-  if (furnMenu && !furnMenu.classList.contains('is-hidden')) {
+  if (furnMenu && furnMenu.classList.contains('is-open')) {
     hideFurnitureMenu()
   }
 })
@@ -1229,7 +1264,7 @@ document.getElementById('zoom-out')?.addEventListener('click', () => {
   setZoomAtCenter(draw, Math.max(0.2, state.view.scale / 1.2))
   scheduleRerender()
 })
-document.getElementById('zoom-reset')?.addEventListener('click', () => {
+document.querySelector('[data-button="zoom-centred"]')?.addEventListener('click', () => {
   fitPlannerToWalls()
   scheduleRerender()
 })
@@ -1256,10 +1291,54 @@ function isMobileUI() {
   }
 }
 
+function isMobileMoveMode() {
+  return isMobileUI() && state.mobileMode === 'move'
+}
+
+function isMobileSelectMode() {
+  return isMobileUI() && state.mobileMode === 'select'
+}
+
+function resetMobileSelectionState() {
+  state.selectedWallId = null
+  state.selectedDoorId = null
+  state.selectedFurnitureId = null
+
+  state.hoverWallId = null
+  state.hoverDoorId = null
+  state.hoverFurnitureId = null
+
+  state.edit = null
+  furnitureEdit = null
+  doorEdit = null
+
+  state.previewWall = null
+  state.previewDoor = null
+  state.previewFurniture = null
+
+  state.ui ??= {}
+  state.ui.lockPan = false
+  state.ui.dragged = false
+}
+
 function setMobileMode(nextMode) {
   if (nextMode !== 'move' && nextMode !== 'select') return
+  if (state.mobileMode === nextMode) return
+
   state.mobileMode = nextMode
+
+  if (nextMode === 'move') {
+    resetMobileSelectionState()
+    setPlannerCursor('default')
+    scheduleRerender()
+  }
+
   syncUI()
+}
+
+function returnToMobileMoveMode() {
+  if (!isMobileUI()) return
+  setMobileMode('move')
 }
 
 function resetInteractionState() {
@@ -1819,25 +1898,22 @@ draw.node.addEventListener('pointerdown', (e) => {
 
       const newId = newDoorId()
 
+
       historyCommit('add-door')
       state.doors.push({
         id: newId,
         kind: 'interior',
         wallId: pd.wallId,
         t: pd.t,
-        w: pd.w ?? DOOR_W_INTERIOR,      // ✅ важное: берём ширину из превью (big/small)
+        w: pd.w ?? DOOR_W_INTERIOR,
         thick: pd.thick ?? NOR_W,
         side: (pd.side === -1) ? -1 : +1,
         locked: false,
       })
 
-      // ✅ авто-выход как у мебели + выделяем установленную дверь
+      hideBuildMenu()
       setMode('idle')
-
-      // ✅ mobile: оставляем выделение, desktop: нет
-      if (e.pointerType !== 'mouse') {
-        state.selectedDoorId = newId
-      }
+      returnToMobileMoveMode()
 
       setPlannerCursor('default')
       scheduleRerender()
@@ -1856,6 +1932,16 @@ draw.node.addEventListener('pointerdown', (e) => {
   // block non-left mouse buttons (for mouse)
   if (e.button !== 0 && e.pointerType === 'mouse') return
   if (state.ui?.dragged && state.mode !== 'draw-furniture') return
+
+  // На мобильном в режиме move нельзя выделять/редактировать объекты
+  if (
+    isMobileMoveMode() &&
+    state.mode !== 'draw-wall' &&
+    state.mode !== 'draw-door' &&
+    state.mode !== 'draw-furniture'
+  ) {
+    return
+  }
 
   const p = screenToWorld(draw, e.clientX, e.clientY)
 
@@ -2041,6 +2127,7 @@ draw.node.addEventListener('pointermove', (e) => {
   // 4) hover (ТОЛЬКО мышь)
   if (e.pointerType !== 'mouse') return
   if (state.mode === 'draw-wall' || state.mode === 'draw-door' || state.mode === 'draw-furniture') return
+  if (isMobileMoveMode()) return
   if (state.ui?.lockPan || state.ui?.dragged || state.edit || doorEdit) return
   const furnHover = findFurnitureIdFromEventTarget(e.target)
   if (furnHover !== state.hoverFurnitureId) {
@@ -2082,7 +2169,6 @@ draw.node.addEventListener('pointerup', (e) => {
     const pf = state.previewFurniture
 
     // ставим только если валидно
-    // ставим только если валидно
     if (meta && pf && pf.ok !== false) {
       historyCommit('add-furniture')
       state.furniture ??= []
@@ -2099,11 +2185,8 @@ draw.node.addEventListener('pointerup', (e) => {
         rot: pf.rot || 0,
       })
 
-      // ✅ сначала выходим в idle (оно всё сбросит)
       setMode('idle')
-
-      // ✅ потом возвращаем выделение (только mobile/touch ветка)
-      state.selectedFurnitureId = newId
+      returnToMobileMoveMode()
     }
 
     scheduleRerender()
