@@ -3,11 +3,13 @@ import { config } from './config.js'
 
 export const state = {
   mode: 'idle',
+  mobileMode: 'move',
 
   // geometry
   walls: [],
   doors: [],
   windows: [],
+  
 
   // selection / hover
   selectedWallId: null,

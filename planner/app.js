@@ -932,7 +932,12 @@ function syncUI() {
   const isWall = state.mode === 'draw-wall'
   const isDoor = state.mode === 'draw-door'
   const isFurn = state.mode === 'draw-furniture'
+  const isMobileMove = state.mobileMode === 'move'
+  const isMobileSelect = state.mobileMode === 'select'
 
+
+  btnModeMove?.classList.toggle('is-active', isMobileUI() && isMobileMove)
+  btnModeSelect?.classList.toggle('is-active', isMobileUI() && isMobileSelect)
   btnWall?.classList.toggle('is-active', isWall)
   btnDoor?.classList.toggle('is-active', isDoor)
   btnFurniture?.classList.toggle('is-active', isFurn)
@@ -1239,6 +1244,24 @@ window.addEventListener('planner:changed', scheduleRerender)
 const btnUndo = document.getElementById('undo')
 const btnRedo = document.getElementById('redo')
 
+// -------- button state 
+const btnModeSelect = document.querySelector('[data-button="mode-select"]')
+const btnModeMove = document.querySelector('[data-button="mode-move"]')
+
+function isMobileUI() {
+  try {
+    return matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+  } catch {
+    return window.innerWidth <= 768
+  }
+}
+
+function setMobileMode(nextMode) {
+  if (nextMode !== 'move' && nextMode !== 'select') return
+  state.mobileMode = nextMode
+  syncUI()
+}
+
 function resetInteractionState() {
   // выйти из wall drag / door drag / preview
   state.edit = null
@@ -1365,6 +1388,16 @@ btnUndo?.addEventListener('click', (e) => {
 btnRedo?.addEventListener('click', (e) => {
   e.preventDefault()
   applyRedo()
+})
+
+btnModeMove?.addEventListener('click', (e) => {
+  e.preventDefault()
+  setMobileMode('move')
+})
+
+btnModeSelect?.addEventListener('click', (e) => {
+  e.preventDefault()
+  setMobileMode('select')
 })
 
 // ---------------- DOORS: add + select + drag ----------------
