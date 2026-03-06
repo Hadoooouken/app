@@ -805,7 +805,9 @@ function updateDeleteButtonState() {
 
 function updateDoorButtonState() {
   if (!btnDoor) return
-  const ok = state.mode !== 'draw-wall' && state.mode !== 'draw-furniture'
+
+  // дверь недоступна только в режиме мебели
+  const ok = state.mode !== 'draw-furniture'
   btnDoor.classList.toggle('inactive', !ok)
 }
 
@@ -969,14 +971,22 @@ function syncUI() {
 
 btnWall?.addEventListener('click', (e) => {
   e.preventDefault()
+  e.stopPropagation()
 
+  // если уже режим стен — выключаем
   if (state.mode === 'draw-wall') {
     setMode('idle')
-    hideBuildMenu()
-    returnToMobileMoveMode?.()
+
+    if (isMobileUI()) {
+      hideBuildMenu()
+      returnToMobileMoveMode()
+    }
+
+    scheduleRerender()
     return
   }
 
+  // если был режим двери/мебели — просто переключаемся на стены
   if (isMobileUI()) {
     setMobileMode('select')
   }
@@ -995,16 +1005,25 @@ btnMetrics?.addEventListener('click', (e) => {
   rerender()
   hideOptionsMenu()
 })
+
 btnDoor?.addEventListener('click', (e) => {
   e.preventDefault()
+  e.stopPropagation()
 
+  // если уже режим двери — выключаем
   if (state.mode === 'draw-door') {
     setMode('idle')
-    hideBuildMenu()
-    returnToMobileMoveMode?.()
+
+    if (isMobileUI()) {
+      hideBuildMenu()
+      returnToMobileMoveMode()
+    }
+
+    scheduleRerender()
     return
   }
 
+  // если был режим стены — сразу переключаемся на дверь
   if (isMobileUI()) {
     setMobileMode('select')
   }
@@ -1026,7 +1045,6 @@ btnDoor?.addEventListener('click', (e) => {
   }
 
   scheduleRerender()
-
 })
 // ---------------- delete selected wall/door ----------------
 function deleteSelectedElement() {
@@ -1887,23 +1905,23 @@ draw.node.addEventListener('pointerdown', (e) => {
       const newId = newDoorId()
 
 
-   historyCommit('add-door')
-state.doors.push({
-  id: newId,
-  kind: 'interior',
-  wallId: pd.wallId,
-  t: pd.t,
-  w: pd.w ?? DOOR_W_INTERIOR,
-  thick: pd.thick ?? NOR_W,
-  side: (pd.side === -1) ? -1 : +1,
-  locked: false,
-})
+      historyCommit('add-door')
+      state.doors.push({
+        id: newId,
+        kind: 'interior',
+        wallId: pd.wallId,
+        t: pd.t,
+        w: pd.w ?? DOOR_W_INTERIOR,
+        thick: pd.thick ?? NOR_W,
+        side: (pd.side === -1) ? -1 : +1,
+        locked: false,
+      })
 
-setMode('idle')
-returnToMobileMoveMode()
-hideBuildMenu()
-setPlannerCursor('default')
-scheduleRerender()
+      hideBuildMenu()
+      setMode('idle')
+      returnToMobileMoveMode()
+      setPlannerCursor('default')
+      scheduleRerender()
     } else {
       // мягкий фидбек "нельзя"
       setPlannerCursor('not-allowed')

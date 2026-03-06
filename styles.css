@@ -32,49 +32,28 @@ body {
   --ui-red-color: #ff2317;
   --bg: #f2eee5;
 
-  :root {
-  --ui-text-color: #1f2937;
-  --ui-muted-color: #cccccc;
-  --ui-accent-color: #4274cb;
-  --ui-icon-bg: #f9fafb;
-  --ui-panel-bg: #efefef;
-  --ui-red-color: #ff2317;
-  --bg: #f2eee5;
-
   /* ===== FIT ПЛАНА ПРИ АВТО-ВПИСЫВАНИИ ===== */
-
   --planner-pad-inline: 10;
-  /* Отступ слева и справа в % от ширины viewport.
-     Чем меньше число — тем крупнее будет план после fitToWalls().
-     Удобно, когда проект вставлен в iframe и нужно быстро приблизить/отдалить план без правки JS. */
+  /* Отступ слева/справа в % от ширины viewport.
+     Меньше = план крупнее. */
 
   --planner-pad-block: 10;
-  /* Отступ сверху и снизу в % от высоты viewport.
-     Работает так же, как inline, только по вертикали.
-     Чем меньше значение — тем выше и крупнее будет планировка. */
+  /* Отступ сверху/снизу в % от высоты viewport.
+     Меньше = план крупнее по вертикали. */
 
   --planner-pad-min: 18;
-  /* Минимальный итоговый padding в пикселях.
-     Нужен как защита, чтобы на маленьких экранах отступ не стал слишком маленьким,
-     и план не прилипал к краям контейнера или iframe. */
+  /* Минимальный padding в px, чтобы план не прилипал к краям. */
 
   --planner-pad-max: 260;
-  /* Максимальный итоговый padding в пикселях.
-     Нужен как ограничитель, чтобы на очень больших экранах или широких iframe
-     отступ не становился слишком большим и план не выглядел слишком мелким. */
+  /* Максимальный padding в px, чтобы план не стал слишком мелким. */
 
   --planner-max-scale: 1.15;
-  /* Максимальный масштаб, который разрешён при auto-fit.
-     Ограничивает слишком сильное приближение, если план маленький, а экран большой.
-     Полезно, чтобы план не "раздувался" слишком сильно внутри iframe. */
+  /* Максимальный auto-zoom при fitToWalls(). */
 
   --planner-fit-mult: 1;
-  /* Общий множитель финального fit.
-     1 = как есть.
-     Меньше 1 (например 0.95) — план станет чуть крупнее.
-     Больше 1 (например 1.05) — план станет чуть мельче.
-     Это удобная "грубая настройка" общего масштаба без изменения pad-inline/pad-block. */
-}
+  /* Общий множитель fit:
+     < 1 = крупнее
+     > 1 = мельче */
 }
 
 .app-ui,
@@ -120,6 +99,9 @@ body {
   font-size: 12px;
   font-family: Arial, sans-serif;
   border-radius: 10px;
+
+  -webkit-tap-highlight-color: transparent;
+  -tap-highlight-color: transparent;
 }
 
 .app-ui .button.mobile-only,
@@ -138,6 +120,7 @@ body {
   background: var(--ui-icon-bg);
   border-radius: 8px;
 }
+
 .app-ui-right .icon {
   margin-bottom: 0;
 }
@@ -147,36 +130,63 @@ body {
   width: 24px;
   height: 24px;
   color: var(--ui-text-color);
-  transition: color 0.3s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
 }
 
-/* .app-ui .button:hover .icon svg,
-.sub-menu:not(.grouped) .button:hover .icon svg {
-  color: var(--ui-accent-color);
-} */
-
-.app-ui .button:not(.is-active):hover .icon svg,
-.sub-menu:not(.grouped) .button:not(.is-active):hover .icon svg {
+/* hover только для НЕ активных и НЕ неактивных */
+.app-ui .button:not(.is-active):not(.inactive):hover .icon svg,
+.sub-menu:not(.grouped) .button:not(.is-active):not(.inactive):hover .icon svg {
   color: var(--ui-accent-color);
 }
 
+/* inactive */
 .app-ui .button.inactive,
 .sub-menu:not(.grouped) .button.inactive {
   cursor: default;
   color: var(--ui-muted-color);
+  pointer-events: none;
+}
+
+.app-ui .button.inactive .icon,
+.sub-menu:not(.grouped) .button.inactive .icon {
+  background: var(--ui-icon-bg) !important;
 }
 
 .app-ui .button.inactive .icon svg,
 .sub-menu:not(.grouped) .button.inactive .icon svg {
-  color: var(--ui-muted-color);
+  color: var(--ui-muted-color) !important;
 }
-.app-ui .button.active .icon svg,
-.sub-menu:not(.grouped) .button.active .icon svg {
-  color: var(--ui-accent-color) !important;
+
+.app-ui .button.inactive:hover .icon,
+.app-ui .button.inactive:active .icon,
+.sub-menu:not(.grouped) .button.inactive:hover .icon,
+.sub-menu:not(.grouped) .button.inactive:active .icon {
+  background: var(--ui-icon-bg) !important;
 }
+
+.app-ui .button.inactive:hover .icon svg,
+.app-ui .button.inactive:active .icon svg,
+.sub-menu:not(.grouped) .button.inactive:hover .icon svg,
+.sub-menu:not(.grouped) .button.inactive:active .icon svg {
+  color: var(--ui-muted-color) !important;
+}
+
+/* активные кнопки */
+.button.is-active .icon {
+  background-color: var(--ui-accent-color);
+}
+
+.button.is-active .icon svg {
+  color: #ffffff !important;
+}
+
+/* delete active */
 .app-ui .button[data-button='trash'].active .icon {
   background-color: var(--ui-red-color);
 }
+
 .app-ui .button[data-button='trash'].active .icon svg {
   color: #ffffff !important;
 }
@@ -204,12 +214,15 @@ body {
 .sub-menu.is-open {
   display: block;
 }
+
 .sub-menu > .group {
   margin-top: 15px;
 }
+
 .sub-menu > .group:first-child {
   margin-top: 0;
 }
+
 .sub-menu .group-label {
   font-weight: 600;
   font-size: 16px;
@@ -217,28 +230,25 @@ body {
   border-bottom: 1px #e1e1e1 solid;
   padding-bottom: 5px;
 }
+
 .sub-menu .group-items {
   display: flex;
   flex-direction: column;
 }
+
 .sub-menu .group-items > div {
   display: flex;
   justify-content: space-between;
   margin-bottom: 8px;
 }
+
 .sub-menu .group-items > div:last-child {
   margin-bottom: 0;
 }
+
 .sub-menu .group-items .size {
   color: #999999;
   margin-left: 15px;
-}
-
-.button.is-active .icon {
-  background-color: var(--ui-accent-color);
-}
-.button.is-active .icon svg {
-  color: #ffffff;
 }
 
 @media (max-width: 768px) {
@@ -291,10 +301,13 @@ body {
     width: 22px;
     height: 22px;
   }
+
+  /* на мобиле hover не нужен */
   .app-ui .button:hover .icon svg,
   .sub-menu:not(.grouped) .button:hover .icon svg {
-    color: var(--ui-text-color);
+    color: inherit;
   }
+
   .sub-menu.grouped .label,
   .sub-menu.grouped .size {
     font-size: 14px;
@@ -314,15 +327,18 @@ body {
     height: 18px;
   }
 }
+
 @media (max-width: 360px) {
   .app-ui-left .main {
     gap: 6px;
   }
+
   .app-ui-left .icon,
   .sub-menu:not(.grouped) .icon {
     width: 36px;
     height: 36px;
   }
+
   .sub-menu .group-items > div {
     margin-bottom: 5px;
   }
