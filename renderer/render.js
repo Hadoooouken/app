@@ -32,9 +32,24 @@ function drawDashedBox(g, {
   color,
   opacity = 0.95,
 } = {}) {
+  const isMobile =
+    (() => {
+      try {
+        return matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
+      } catch {
+        return window.innerWidth <= 768
+      }
+    })()
+
   const STROKE_PX = config.render?.outlineStrokePx ?? 2
-  const DASH_A_PX = config.render?.outlineDashApx ?? 10
-  const DASH_B_PX = config.render?.outlineDashBpx ?? 8
+
+  const DASH_A_PX = isMobile
+    ? (config.render?.outlineDashApxMobile ?? 4)
+    : (config.render?.outlineDashApx ?? 10)
+
+  const DASH_B_PX = isMobile
+    ? (config.render?.outlineDashBpxMobile ?? 3)
+    : (config.render?.outlineDashBpx ?? 8)
 
   const strokeW = STROKE_PX * invScale
   const dash = `${DASH_A_PX * invScale} ${DASH_B_PX * invScale}`
