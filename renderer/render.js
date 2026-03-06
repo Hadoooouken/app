@@ -55,8 +55,11 @@ function drawDashedBox(g, {
   }
 
   if (zoom < 0.35) {
-    dashPx = isCoarse ? 5 : 4
-    gapPx = isCoarse ? 14 : 12
+    //пунтирная линия для маленького зума
+    // dashPx = isCoarse ? 5 : 4
+    // gapPx = isCoarse ? 14 : 12
+    dashPx = isCoarse ? 4 : 3
+    gapPx = isCoarse ? 16 : 14
   }
 
   const strokeW = STROKE_PX * invScale
