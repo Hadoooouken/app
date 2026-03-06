@@ -216,7 +216,7 @@ export const config = {
 
         // Плашка “Коробка: W × H м” (можно выключать)
         boxLabel: {
-            enabled: true, // false = вообще не рисуем
+            enabled: false, // false = вообще не рисуем
             fontPx: 13, // px
             padPx: 4, // px
             radiusPx: 6, // px

@@ -65,13 +65,27 @@
         }
     }
 
-    function closeAllSubMenus(exceptMenu) {
-        subMenus.forEach(function (menu) {
-            if (menu !== exceptMenu) {
-                menu.classList.remove("is-open");
-            }
-        });
-    }
+function isBuildModeActive() {
+    var wallBtn = document.getElementById("btn-wall");
+    var doorBtn = document.getElementById("btn-door");
+    return !!(
+        (wallBtn && wallBtn.classList.contains("is-active")) ||
+        (doorBtn && doorBtn.classList.contains("is-active"))
+    );
+}
+
+function closeAllSubMenus(exceptMenu) {
+    subMenus.forEach(function (menu) {
+        if (menu === exceptMenu) return;
+
+        var isBuildMenu = menu.getAttribute("data-parent-button") === "build";
+
+        // если активен режим стены/двери — submenu строительства не закрываем
+        if (isBuildMenu && isBuildModeActive()) return;
+
+        menu.classList.remove("is-open");
+    });
+}
 
     function openSubMenu(menu) {
         closeAllSubMenus(menu);
@@ -103,9 +117,9 @@
             }
         }
 
-        if (!clickedInsideMenu) {
-            closeAllSubMenus(null);
-        }
+   if (!clickedInsideMenu) {
+    closeAllSubMenus(null);
+}
     });
 
     document.addEventListener("keydown", function (event) {

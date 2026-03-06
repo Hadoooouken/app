@@ -100,8 +100,13 @@ body {
   transition: color 0.3s ease;
 }
 
-.app-ui .button:hover .icon svg,
+/* .app-ui .button:hover .icon svg,
 .sub-menu:not(.grouped) .button:hover .icon svg {
+  color: var(--ui-accent-color);
+} */
+
+.app-ui .button:not(.is-active):hover .icon svg,
+.sub-menu:not(.grouped) .button:not(.is-active):hover .icon svg {
   color: var(--ui-accent-color);
 }
 
@@ -177,6 +182,13 @@ body {
 .sub-menu .group-items .size {
   color: #999999;
   margin-left: 15px;
+}
+
+.button.is-active .icon {
+  background-color: var(--ui-accent-color);
+}
+.button.is-active .icon svg {
+  color: #ffffff;
 }
 
 @media (max-width: 768px) {

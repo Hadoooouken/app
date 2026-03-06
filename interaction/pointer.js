@@ -432,6 +432,7 @@ export function initPointer(draw, { newWallId } = {}) {
 
       historyCommit('add wall')
       state.walls.push(newWall)
+      window.dispatchEvent(new Event('planner:changed'))
       resetAll()
       return
     }
@@ -503,11 +504,12 @@ export function initPointer(draw, { newWallId } = {}) {
 
     historyCommit('add wall')
     state.walls.push(newWall)
+    window.dispatchEvent(new Event('planner:changed'))
 
     // after commit
     firstPoint = null
     state.previewWall = null
-    state.snapPoint = { ...pFinal } // логично оставить последнюю “реальную” точку
+    state.snapPoint = { ...pFinal }
     state.cursorState = 'idle'
     suppressPreview = false
     clearPulse()

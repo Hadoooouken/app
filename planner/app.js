@@ -1,7 +1,7 @@
 // planner/app.js
 import { state } from '../engine/state.js'
 import { config, CLEAR_FROM_CAPITAL } from '../engine/config.js'
-import { historyCommit, historyBegin, historyEnd, undo, redo } from '../engine/history.js'
+import { historyCommit, historyBegin, historyEnd, undo, redo, historyCanUndo } from '../engine/history.js'
 
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
@@ -126,6 +126,11 @@ function spawnFurniturePreviewAtPoint(worldPoint) {
   scheduleRerender()
 }
 
+const submenuBuild = document.getElementById('submenu-build')
+
+function hideBuildMenu() {
+  submenuBuild?.classList.remove('is-open')
+}
 
 function setPlannerCursor(cursor) {
   draw.node.style.cursor = cursor
@@ -467,6 +472,7 @@ function rerender() {
   updateStatus()
   updateDeleteButtonState()
   updateDoorButtonState()
+  updateUndoButtonState()
 }
 
 // ---------------- helpers: find ids from SVG target ----------------
@@ -764,46 +770,32 @@ function fitPlannerToWalls() {
   fitToWalls(draw, { padding: getFitPaddingPx(), maxScale: getPlannerMaxScale() })
 }
 
+function updateUndoButtonState() {
+  if (!btnUndo) return
+  btnUndo.classList.toggle('inactive', !historyCanUndo())
+}
+
 // ---------------- status / delete btn ----------------
 function updateDeleteButtonState() {
   if (!btnTrash) return
 
-  // Во время рисования стен/дверей — удаление отключаем
+  let canDelete = false
+
+  // Во время рисования не удаляем
   if (state.mode === 'draw-wall' || state.mode === 'draw-door' || state.mode === 'draw-furniture') {
-    btnTrash.classList.add('is-disabled')
-    btnTrash.classList.remove('is-danger')
-    return
-  }
-
-  // 0.5) Если выбрана мебель — можно удалить
-  if (state.selectedFurnitureId) {
-    const ok = (state.furniture || []).some(f => f.id === state.selectedFurnitureId)
-    btnTrash.classList.toggle('is-disabled', !ok)
-    btnTrash.classList.toggle('is-danger', ok)
-    return
-  }
-
-  // 1) Если выбрана дверь — можно удалить только interior
-  if (state.selectedDoorId) {
+    canDelete = false
+  } else if (state.selectedFurnitureId) {
+    canDelete = (state.furniture || []).some(f => f.id === state.selectedFurnitureId)
+  } else if (state.selectedDoorId) {
     const d = (state.doors || []).find(x => x.id === state.selectedDoorId)
-    const ok = !!d && d.kind === 'interior' && !d.locked
-    btnTrash.classList.toggle('is-disabled', !ok)
-    btnTrash.classList.toggle('is-danger', ok)
-    return
+    canDelete = !!d && d.kind === 'interior' && !d.locked
+  } else if (state.selectedWallId) {
+    const w = (state.walls || []).find(w => w.id === state.selectedWallId)
+    canDelete = !!w && w.kind === 'normal'
   }
 
-  // 2) Если выбрана стена — можно удалить только normal
-  const wallId = state.selectedWallId
-  if (!wallId) {
-    btnTrash.classList.add('is-disabled')
-    btnTrash.classList.remove('is-danger')
-    return
-  }
-
-  const w = (state.walls || []).find(w => w.id === wallId)
-  const ok = !!w && w.kind === 'normal'
-  btnTrash.classList.toggle('is-disabled', !ok)
-  btnTrash.classList.toggle('is-danger', ok)
+  btnTrash.classList.toggle('inactive', !canDelete)
+  btnTrash.classList.toggle('active', canDelete)
 }
 
 function updateDoorButtonState() {
@@ -944,7 +936,6 @@ function syncUI() {
   btnWall?.classList.toggle('is-active', isWall)
   btnDoor?.classList.toggle('is-active', isDoor)
   btnFurniture?.classList.toggle('is-active', isFurn)
-  // btnMetrics?.classList.toggle('is-active', !!state.ui?.showMetrics)
 
   if (!hint) return
 
@@ -959,11 +950,11 @@ function syncUI() {
   }
 
   if (isFurn) {
-    hint.textContent = 'Furniture: клик — поставить. ESC — отмена. (перетаскивание/поворот добавим следующим шагом)'
+    hint.textContent = 'Furniture: клик — поставить. ESC — отмена.'
     return
   }
 
-  hint.textContent = 'Клик по стене — выделить. Drag по стене/хэндлам — редактировать. Drag по пустому — панорамирование.'
+  hint.textContent = 'Клик по стене — выделить. Drag по стене/хэндлам — редактировать.'
 }
 
 btnWall?.addEventListener('click', () =>
@@ -986,6 +977,7 @@ btnDoor?.addEventListener('click', (e) => {
 
   if (state.mode === 'draw-door') {
     setMode('idle')
+    hideBuildMenu()
     return
   }
 
@@ -993,7 +985,6 @@ btnDoor?.addEventListener('click', (e) => {
 
   const p0 = lastPointerWorld || getViewportCenterWorld()
 
-  // ✅ превью как у мебели — всегда есть, даже без стены
   state.previewDoor = {
     x: p0.x,
     y: p0.y,
@@ -1006,6 +997,7 @@ btnDoor?.addEventListener('click', (e) => {
     side: +1,
   }
 
+  hideBuildMenu()
   scheduleRerender()
 })
 // ---------------- delete selected wall/door ----------------
@@ -1349,7 +1341,6 @@ function resetToTemplate() {
 
   // ✅ UI-состояние тоже "как по умолчанию"
   state.ui ??= {}
-  state.ui.showMetrics = true
 
   // ✅ центрируем/масштабируем как при старте
   fitPlannerToWalls()
