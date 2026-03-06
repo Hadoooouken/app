@@ -65,27 +65,24 @@
         }
     }
 
-function isBuildModeActive() {
-    var wallBtn = document.getElementById("btn-wall");
-    var doorBtn = document.getElementById("btn-door");
-    return !!(
-        (wallBtn && wallBtn.classList.contains("is-active")) ||
-        (doorBtn && doorBtn.classList.contains("is-active"))
-    );
-}
+    function hasActiveWallTool() {
+        return !!document.querySelector('[data-button="add-wall"].is-active');
+    }
 
-function closeAllSubMenus(exceptMenu) {
-    subMenus.forEach(function (menu) {
-        if (menu === exceptMenu) return;
+    function closeAllSubMenus(exceptMenu) {
+        subMenus.forEach(function (menu) {
+            if (menu === exceptMenu) return;
 
-        var isBuildMenu = menu.getAttribute("data-parent-button") === "build";
+            var parentButton = menu.getAttribute("data-parent-button");
 
-        // если активен режим стены/двери — submenu строительства не закрываем
-        if (isBuildMenu && isBuildModeActive()) return;
+            // submenu строительства не закрываем только пока активна СТЕНА
+            if (parentButton === "build" && hasActiveWallTool()) {
+                return;
+            }
 
-        menu.classList.remove("is-open");
-    });
-}
+            menu.classList.remove("is-open");
+        });
+    }
 
     function openSubMenu(menu) {
         closeAllSubMenus(menu);
@@ -117,9 +114,17 @@ function closeAllSubMenus(exceptMenu) {
             }
         }
 
-   if (!clickedInsideMenu) {
-    closeAllSubMenus(null);
-}
+        // если клик внутри build submenu и активна СТЕНА — не закрываем
+        if (clickedInsideMenu) {
+            var parentButton = clickedInsideMenu.getAttribute("data-parent-button");
+            if (parentButton === "build" && hasActiveWallTool()) {
+                return;
+            }
+        }
+
+        if (!clickedInsideMenu) {
+            closeAllSubMenus(null);
+        }
     });
 
     document.addEventListener("keydown", function (event) {

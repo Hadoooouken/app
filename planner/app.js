@@ -972,12 +972,8 @@ btnWall?.addEventListener('click', (e) => {
 
   if (state.mode === 'draw-wall') {
     setMode('idle')
-
-    if (isMobileUI()) {
-      hideBuildMenu?.()
-      returnToMobileMoveMode?.()
-    }
-
+    hideBuildMenu()
+    returnToMobileMoveMode?.()
     return
   }
 
@@ -986,11 +982,6 @@ btnWall?.addEventListener('click', (e) => {
   }
 
   setMode('draw-wall')
-
-  if (isMobileUI()) {
-    hideBuildMenu?.()
-  }
-
   scheduleRerender()
 })
 // по умолчанию показываем
@@ -1009,12 +1000,8 @@ btnDoor?.addEventListener('click', (e) => {
 
   if (state.mode === 'draw-door') {
     setMode('idle')
-
-    if (isMobileUI()) {
-      hideBuildMenu()
-      returnToMobileMoveMode()
-    }
-
+    hideBuildMenu()
+    returnToMobileMoveMode?.()
     return
   }
 
@@ -1039,6 +1026,7 @@ btnDoor?.addEventListener('click', (e) => {
   }
 
   scheduleRerender()
+
 })
 // ---------------- delete selected wall/door ----------------
 function deleteSelectedElement() {
@@ -1899,24 +1887,23 @@ draw.node.addEventListener('pointerdown', (e) => {
       const newId = newDoorId()
 
 
-      historyCommit('add-door')
-      state.doors.push({
-        id: newId,
-        kind: 'interior',
-        wallId: pd.wallId,
-        t: pd.t,
-        w: pd.w ?? DOOR_W_INTERIOR,
-        thick: pd.thick ?? NOR_W,
-        side: (pd.side === -1) ? -1 : +1,
-        locked: false,
-      })
+   historyCommit('add-door')
+state.doors.push({
+  id: newId,
+  kind: 'interior',
+  wallId: pd.wallId,
+  t: pd.t,
+  w: pd.w ?? DOOR_W_INTERIOR,
+  thick: pd.thick ?? NOR_W,
+  side: (pd.side === -1) ? -1 : +1,
+  locked: false,
+})
 
-      hideBuildMenu()
-      setMode('idle')
-      returnToMobileMoveMode()
-
-      setPlannerCursor('default')
-      scheduleRerender()
+setMode('idle')
+returnToMobileMoveMode()
+hideBuildMenu()
+setPlannerCursor('default')
+scheduleRerender()
     } else {
       // мягкий фидбек "нельзя"
       setPlannerCursor('not-allowed')
