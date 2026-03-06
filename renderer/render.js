@@ -32,36 +32,46 @@ function drawDashedBox(g, {
   color,
   opacity = 0.95,
 } = {}) {
-  const isMobile =
-    (() => {
-      try {
-        return matchMedia('(pointer: coarse)').matches || window.innerWidth <= 768
-      } catch {
-        return window.innerWidth <= 768
-      }
-    })()
+  const isCoarse = matchMedia('(pointer: coarse)').matches
 
-  const STROKE_PX = config.render?.outlineStrokePx ?? 2
+  const STROKE_PX = isCoarse ? 2.5 : 2
+  const baseDashPx = isCoarse ? 10 : 8
+  const baseGapPx = isCoarse ? 8 : 6
 
-  const DASH_A_PX = isMobile
-    ? (config.render?.outlineDashApxMobile ?? 4)
-    : (config.render?.outlineDashApx ?? 10)
+  // чем меньше scale (чем сильнее отдалили), тем сильнее режим "редкий пунктир"
+  const zoom = 1 / invScale
 
-  const DASH_B_PX = isMobile
-    ? (config.render?.outlineDashBpxMobile ?? 3)
-    : (config.render?.outlineDashBpx ?? 8)
+  let dashPx = baseDashPx
+  let gapPx = baseGapPx
+
+  if (zoom < 0.8) {
+    dashPx = isCoarse ? 8 : 6
+    gapPx = isCoarse ? 10 : 8
+  }
+
+  if (zoom < 0.5) {
+    dashPx = isCoarse ? 6 : 5
+    gapPx = isCoarse ? 12 : 10
+  }
+
+  if (zoom < 0.35) {
+    dashPx = isCoarse ? 5 : 4
+    gapPx = isCoarse ? 14 : 12
+  }
 
   const strokeW = STROKE_PX * invScale
-  const dash = `${DASH_A_PX * invScale} ${DASH_B_PX * invScale}`
+  const dash = `${dashPx * invScale} ${gapPx * invScale}`
 
   g.rect(w, h)
     .center(cx, cy)
     .rotate(angDeg, cx, cy)
     .fill({ color: '#000', opacity: 0 })
     .stroke({ width: strokeW, color, opacity })
-    .attr({ 'stroke-dasharray': dash, 'pointer-events': 'none' })
+    .attr({
+      'stroke-dasharray': dash,
+      'pointer-events': 'none',
+    })
 }
-
 function doorAngleRightDown(a, b) {
   const dx = b.x - a.x
   const dy = b.y - a.y
