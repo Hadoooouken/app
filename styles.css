@@ -1,3 +1,9 @@
+html,
+body,
+#workspace {
+  touch-action: manipulation;
+}
+
 #workspace {
   position: fixed;
   inset: 0;
