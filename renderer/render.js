@@ -91,13 +91,14 @@ function drawDashedBox(g, {
   const perimeterPx = 2 * (wPx + hPx)
 
   // хотим примерно столько штрихов по периметру
-  const targetDashCount = isCoarse ? 22 : 26
+  const targetDashCount = isCoarse ? 16 : 18
 
   // длина одного цикла dash+gap в px
   let cyclePx = perimeterPx / targetDashCount
 
   // ограничиваем, чтобы не было слишком редкого/частого пунктира
-  cyclePx = Math.max(4, Math.min(10, cyclePx))
+
+  cyclePx = Math.max(5, Math.min(12, cyclePx))
 
   // штрих и пробел
   let dashPx = cyclePx * 0.48

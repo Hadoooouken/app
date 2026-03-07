@@ -2058,6 +2058,28 @@ draw.node.addEventListener('pointerdown', (e) => {
     return
   }
 
+  const doorId = findDoorIdFromEventTarget(e.target)
+if (doorId) {
+  const d = getDoorById(doorId)
+
+  state.selectedDoorId = doorId
+  state.selectedWallId = null
+  state.selectedFurnitureId = null
+
+  // hover можно сразу сбросить
+  state.hoverWallId = null
+  state.hoverFurnitureId = null
+
+  // двигать можно только межкомнатную и не locked
+  if (d && d.kind === 'interior' && !d.locked) {
+    draw.node.setPointerCapture?.(e.pointerId)
+    startDoorDrag(doorId)
+  }
+
+  scheduleRerender()
+  return
+}
+
   // --- wall by DOM target (особенно важно на touch) ---
   const wallIdFromTarget = findWallIdFromEventTarget(e.target)
   if (wallIdFromTarget) {
