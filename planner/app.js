@@ -939,12 +939,13 @@ function syncUI() {
   const isWall = state.mode === 'draw-wall'
   const isDoor = state.mode === 'draw-door'
   const isFurn = state.mode === 'draw-furniture'
-  const isMobileMove = state.mobileMode === 'move'
-  const isMobileSelect = state.mobileMode === 'select'
 
+  const showMobileModes = isMobileUI() && !isWall && !isDoor && !isFurn
+  const isMobileMove = showMobileModes && state.mobileMode === 'move'
+  const isMobileSelect = showMobileModes && state.mobileMode === 'select'
 
-  btnModeMove?.classList.toggle('is-active', isMobileUI() && isMobileMove)
-  btnModeSelect?.classList.toggle('is-active', isMobileUI() && isMobileSelect)
+  btnModeMove?.classList.toggle('is-active', isMobileMove)
+  btnModeSelect?.classList.toggle('is-active', isMobileSelect)
   btnWall?.classList.toggle('is-active', isWall)
   btnDoor?.classList.toggle('is-active', isDoor)
   btnFurniture?.classList.toggle('is-active', isFurn)
@@ -1477,11 +1478,25 @@ btnRedo?.addEventListener('click', (e) => {
 
 btnModeMove?.addEventListener('click', (e) => {
   e.preventDefault()
+
+  if (state.mode === 'draw-wall' || state.mode === 'draw-door' || state.mode === 'draw-furniture') {
+    setMode('idle')
+    hideBuildMenu()
+    hideFurnitureMenu()
+  }
+
   setMobileMode('move')
 })
 
 btnModeSelect?.addEventListener('click', (e) => {
   e.preventDefault()
+
+  if (state.mode === 'draw-wall' || state.mode === 'draw-door' || state.mode === 'draw-furniture') {
+    setMode('idle')
+    hideBuildMenu()
+    hideFurnitureMenu()
+  }
+
   setMobileMode('select')
 })
 
@@ -1880,30 +1895,27 @@ draw.node.addEventListener('pointerdown', (e) => {
     doorPlace = { pointerId: e.pointerId }
     draw.node.setPointerCapture?.(e.pointerId)
 
-    // Shift = большая дверь (см updateDoorPreviewAtPoint)
-    updateDoorPreviewAtPoint(p, { big: !!e.shiftKey })
+    updateDoorPreviewAtPoint(p)
 
     const pd = state.previewDoor
 
-    // ✅ ставим только если ok (иначе у краёв подрезки будет ставиться "криво")
+    // ставим только если ok
     if (pd?.ok && pd.wallId) {
       state.doors = state.doors || []
 
-      // ✅ одна дверь на стену (и маленькая, и большая — всё равно 1)
       if (config.doors.oneInteriorPerWall) {
         const existsOnWall = (state.doors || []).some(d =>
           d.wallId === pd.wallId && d.kind === 'interior' && !d.locked
         )
+
         if (existsOnWall) {
           hint && (hint.textContent = 'На этой стене уже есть дверь. Можно только одну.')
-          // можно оставить превью (пусть будет not-allowed), но не ставим
           scheduleRerender()
           return
         }
       }
 
       const newId = newDoorId()
-
 
       historyCommit('add-door')
       state.doors.push({
@@ -1938,13 +1950,18 @@ draw.node.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 && e.pointerType === 'mouse') return
   if (state.ui?.dragged && state.mode !== 'draw-furniture') return
 
-  // На мобильном в режиме move нельзя выделять/редактировать объекты
-  if (
-    isMobileMoveMode() &&
-    state.mode !== 'draw-wall' &&
-    state.mode !== 'draw-door' &&
-    state.mode !== 'draw-furniture'
-  ) {
+  // На мобильном в режиме move — только pan.
+  // Любое попадание по объекту НЕ должно перехватывать drag.
+  if (isMobileMoveMode()) {
+    state.selectedWallId = null
+    state.selectedDoorId = null
+    state.selectedFurnitureId = null
+
+    state.hoverWallId = null
+    state.hoverDoorId = null
+    state.hoverFurnitureId = null
+
+    scheduleRerender()
     return
   }
 
@@ -1980,13 +1997,12 @@ draw.node.addEventListener('pointerdown', (e) => {
     return
   }
 
-  // --- furniture: place new ---
   if (state.mode === 'draw-furniture') {
     const typeId = state.draftFurnitureTypeId
     const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
     const pf = state.previewFurniture
 
-    // 🖱️ mouse: click = place
+    // mouse: click = place
     if (e.pointerType === 'mouse') {
       if (!meta || !pf || pf.ok === false) return
 
@@ -2006,12 +2022,17 @@ draw.node.addEventListener('pointerdown', (e) => {
       })
 
       setMode('idle')
-      // ✅ desktop (mouse): НЕ выделяем после постановки
+
+      if (isMobileUI()) {
+        setMobileMode('select')
+        state.selectedFurnitureId = newId
+      }
+
       scheduleRerender()
       return
     }
 
-    // 📱 touch: начать placement (добавление будет в pointerup)
+    // touch: начать placement (добавление будет в pointerup)
     if (!meta) return
     e.preventDefault()
     draw.node.setPointerCapture?.(e.pointerId)
@@ -2021,35 +2042,6 @@ draw.node.addEventListener('pointerdown', (e) => {
     state.ui.lockPan = true
 
     updateFurniturePreviewAtPoint(p)
-    scheduleRerender()
-    return
-  }
-
-  // --- doors select/drag ---
-  const doorId = findDoorIdFromEventTarget(e.target)
-  if (doorId) {
-    const d = getDoorById(doorId)
-    if (d && d.kind === 'interior' && !d.locked) {
-      state.selectedDoorId = doorId
-      state.selectedWallId = null
-      state.selectedFurnitureId = null
-      startDoorDrag(doorId)
-      scheduleRerender()
-      return
-    }
-  }
-
-  // --- wall handle ---
-  const h =
-    typeof pickWallHandleAt === 'function'
-      ? pickWallHandleAt(p, { tolPx: HANDLE_TOL_PX })
-      : null
-
-  if (h) {
-    state.selectedWallId = h.id
-    state.selectedDoorId = null
-    state.selectedFurnitureId = null
-    startEdit(h.handle, h.id, p)
     scheduleRerender()
     return
   }
