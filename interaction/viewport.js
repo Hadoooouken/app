@@ -38,8 +38,10 @@ export function initViewport(draw) {
     const hitInteractive = e.target?.closest?.(
       '[data-wall-id], [data-door-id], [data-handle], [data-furniture-id], [data-furniture-rotate]'
     )
-    if (hitInteractive) return
 
+    // ✅ в mobile move разрешаем панорамирование даже если палец попал по мебели/двери/стене
+    const allowPanOverInteractive = isMobileUI() && state.mobileMode === 'move'
+    if (hitInteractive && !allowPanOverInteractive) return
     isDown = true
     isDragging = false
     state.ui.dragged = false

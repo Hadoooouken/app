@@ -2183,7 +2183,16 @@ draw.node.addEventListener('pointerup', (e) => {
       })
 
       setMode('idle')
-      returnToMobileMoveMode()
+
+      // ✅ после постановки на мобилке сразу переходим в select
+      // и выделяем только что добавленную мебель
+      if (isMobileUI()) {
+        setMobileMode('select')
+        state.selectedFurnitureId = newId
+      }
+
+      scheduleRerender()
+      return
     }
 
     scheduleRerender()
