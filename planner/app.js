@@ -2046,6 +2046,18 @@ draw.node.addEventListener('pointerdown', (e) => {
     return
   }
 
+    // --- wall resize by handles ---
+  const handleHit = pickWallHandleAt(p, { tolPx: HANDLE_TOL_PX })
+  if (handleHit) {
+    state.selectedWallId = handleHit.id
+    state.selectedDoorId = null
+    state.selectedFurnitureId = null
+
+    startEdit(handleHit.handle, handleHit.id, p) // 'a' | 'b'
+    scheduleRerender()
+    return
+  }
+
   // --- wall by DOM target (особенно важно на touch) ---
   const wallIdFromTarget = findWallIdFromEventTarget(e.target)
   if (wallIdFromTarget) {
