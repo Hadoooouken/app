@@ -26,6 +26,56 @@ function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
+// function drawDashedBox(g, {
+//   cx, cy, w, h, angDeg,
+//   invScale,
+//   color,
+//   opacity = 0.95,
+// } = {}) {
+//   const isCoarse = matchMedia('(pointer: coarse)').matches
+
+//   const STROKE_PX = isCoarse ? 2.5 : 2
+//   const baseDashPx = isCoarse ? 10 : 8
+//   const baseGapPx = isCoarse ? 8 : 6
+
+//   // чем меньше scale (чем сильнее отдалили), тем сильнее режим "редкий пунктир"
+//   const zoom = 1 / invScale
+
+//   let dashPx = baseDashPx
+//   let gapPx = baseGapPx
+
+//   if (zoom < 0.8) {
+//     dashPx = isCoarse ? 8 : 6
+//     gapPx = isCoarse ? 10 : 8
+//   }
+
+//   if (zoom < 0.5) {
+//     dashPx = isCoarse ? 6 : 5
+//     gapPx = isCoarse ? 12 : 10
+//   }
+
+//   if (zoom < 0.35) {
+//     //пунтирная линия для маленького зума
+//     // dashPx = isCoarse ? 5 : 4
+//     // gapPx = isCoarse ? 14 : 12
+//     dashPx = isCoarse ? 4 : 3
+//     gapPx = isCoarse ? 16 : 14
+//   }
+
+//   const strokeW = STROKE_PX * invScale
+//   const dash = `${dashPx * invScale} ${gapPx * invScale}`
+
+//   g.rect(w, h)
+//     .center(cx, cy)
+//     .rotate(angDeg, cx, cy)
+//     .fill({ color: '#000', opacity: 0 })
+//     .stroke({ width: strokeW, color, opacity })
+//     .attr({
+//       'stroke-dasharray': dash,
+//       'pointer-events': 'none',
+//     })
+// }
+
 function drawDashedBox(g, {
   cx, cy, w, h, angDeg,
   invScale,
@@ -34,47 +84,55 @@ function drawDashedBox(g, {
 } = {}) {
   const isCoarse = matchMedia('(pointer: coarse)').matches
 
-  const STROKE_PX = isCoarse ? 2.5 : 2
-  const baseDashPx = isCoarse ? 10 : 8
-  const baseGapPx = isCoarse ? 8 : 6
+  // world -> px
+  const scale = 1 / Math.max(1e-6, invScale)
+  const wPx = Math.max(1, w * scale)
+  const hPx = Math.max(1, h * scale)
+  const perimeterPx = 2 * (wPx + hPx)
 
-  // чем меньше scale (чем сильнее отдалили), тем сильнее режим "редкий пунктир"
-  const zoom = 1 / invScale
+  // хотим примерно столько штрихов по периметру
+  const targetDashCount = isCoarse ? 22 : 26
 
-  let dashPx = baseDashPx
-  let gapPx = baseGapPx
+  // длина одного цикла dash+gap в px
+  let cyclePx = perimeterPx / targetDashCount
 
-  if (zoom < 0.8) {
-    dashPx = isCoarse ? 8 : 6
-    gapPx = isCoarse ? 10 : 8
+  // ограничиваем, чтобы не было слишком редкого/частого пунктира
+  cyclePx = Math.max(4, Math.min(10, cyclePx))
+
+  // штрих и пробел
+  let dashPx = cyclePx * 0.48
+  let gapPx = cyclePx * 0.52
+
+  // на совсем маленьких рамках делаем ещё плотнее
+  const minSidePx = Math.min(wPx, hPx)
+  if (minSidePx < 80) {
+    dashPx = Math.max(2, dashPx * 0.8)
+    gapPx = Math.max(2, gapPx * 0.75)
+  }
+  if (minSidePx < 50) {
+    dashPx = Math.max(1.5, dashPx * 0.75)
+    gapPx = Math.max(1.5, gapPx * 0.7)
   }
 
-  if (zoom < 0.5) {
-    dashPx = isCoarse ? 6 : 5
-    gapPx = isCoarse ? 12 : 10
-  }
-
-  if (zoom < 0.35) {
-    //пунтирная линия для маленького зума
-    // dashPx = isCoarse ? 5 : 4
-    // gapPx = isCoarse ? 14 : 12
-    dashPx = isCoarse ? 4 : 3
-    gapPx = isCoarse ? 16 : 14
-  }
-
-  const strokeW = STROKE_PX * invScale
+  const strokeW = (isCoarse ? 2.5 : 2) * invScale
   const dash = `${dashPx * invScale} ${gapPx * invScale}`
 
   g.rect(w, h)
     .center(cx, cy)
     .rotate(angDeg, cx, cy)
     .fill({ color: '#000', opacity: 0 })
-    .stroke({ width: strokeW, color, opacity })
+    .stroke({
+      width: strokeW,
+      color,
+      opacity,
+      linecap: 'round',
+    })
     .attr({
       'stroke-dasharray': dash,
       'pointer-events': 'none',
     })
 }
+
 function doorAngleRightDown(a, b) {
   const dx = b.x - a.x
   const dy = b.y - a.y
