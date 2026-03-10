@@ -251,6 +251,24 @@ body {
   margin-left: 15px;
 }
 
+.label {
+  transition: color 0.2s;
+}
+
+
+
+@media (hover: hover) {
+  .label:hover {
+    color: #0a84ff;
+  }
+}
+
+@media (hover: none) {
+  .label:active {
+    color: #0a84ff;
+  }
+}
+
 @media (max-width: 768px) {
   .app-ui-left {
     top: auto;

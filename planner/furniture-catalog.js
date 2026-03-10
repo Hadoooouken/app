@@ -1,31 +1,3 @@
-// world units у тебя = cm, значит 200см = 200
-// export const FURN_CATEGORIES = [
-//     {
-//         id: 'living',
-//         label: 'Гостиная/спальня',
-//         items: [
-//             { typeId: 'sofa', label: 'Диван', symbolId: 'mebel-divan-big', w: 200, h: 100 },
-//             { typeId: 'bed', label: 'Кровать', symbolId: 'bed-big', w: 200, h: 160 },
-//         ],
-//     },
-//     {
-//         id: 'kitchen',
-//         label: 'Кухня',
-//         items: [
-//             { typeId: 'kitchen', label: 'Гарнитур', symbolId: 'f-kitchen', w: 240, h: 60 },
-//         ],
-//     },
-//     {
-//         id: 'bath',
-//         label: 'Ванная',
-//         items: [
-//             { typeId: 'toilet', label: 'Унитаз', symbolId: 'f-toilet', w: 70, h: 40 },
-//             { typeId: 'bath', label: 'Ванна', symbolId: 'f-bath', w: 170, h: 70 },
-//         ],
-//     },
-// ]
-
-// world units у тебя = cm, значит 200см = 200
 export const FURN_CATEGORIES = [
     {
         id: 'living',
