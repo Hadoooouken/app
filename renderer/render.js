@@ -9,6 +9,15 @@ import { fmtM2 } from '../engine/metrics.js'
 const CAP_W = config.walls.CAP_W
 const NOR_W = config.walls.NOR_W
 
+// цвет SVG мебели
+const FURN_SVG_COLOR = config.theme.wall.normal
+const FURN_SVG_HOVER_COLOR = config.theme.wall.hover
+const FURN_SVG_SELECTED_COLOR = config.theme.wall.selected
+
+// цвет SVG превью мебели
+const FURN_PREVIEW_OK_COLOR = config.theme.wall.selected
+const FURN_PREVIEW_INVALID_COLOR = config.theme.cursor.invalid
+
 // --- helpers ---
 function keyOf(p) {
   return `${Math.round(p.x * 1000)}:${Math.round(p.y * 1000)}`
@@ -848,126 +857,109 @@ export function render(draw) {
     })
   }
 
-  // ---- FURNITURE ----
-  const furniture = state.furniture || []
-  for (const f of furniture) {
-    const isSel = f.id === state.selectedFurnitureId
-    const isHover = !isSel && f.id === state.hoverFurnitureId
-    const opacity = isHover ? 0.92 : 1
+// ---- FURNITURE ----
+const furniture = state.furniture || []
+for (const f of furniture) {
+  const isSel = f.id === state.selectedFurnitureId
+  const isHover = !isSel && f.id === state.hoverFurnitureId
+  const opacity = isHover ? 0.92 : 1
 
-    const sym = draw.defs().findOne(`#${f.symbolId}`)
-    if (!sym) continue
+  const furnColor = isSel
+    ? FURN_SVG_SELECTED_COLOR
+    : isHover
+      ? FURN_SVG_HOVER_COLOR
+      : FURN_SVG_COLOR
 
-    overlayG
-      .use(sym)
-      .size(f.w, f.h)
-      .center(f.x, f.y)
-      .rotate(f.rot || 0, f.x, f.y)
-      .attr({ 'pointer-events': 'none', opacity })
+  const sym = draw.defs().findOne(`#${f.symbolId}`)
+  if (!sym) continue
 
-    overlayG
-      .rect(f.w, f.h)
-      .center(f.x, f.y)
-      .rotate(f.rot || 0, f.x, f.y)
-      .fill({ color: '#000', opacity: 0 })
-      .attr({
-        'pointer-events': 'all',
-        'data-furniture-id': f.id,
-      })
+  overlayG
+    .use(sym)
+    .size(f.w, f.h)
+    .center(f.x, f.y)
+    .rotate(f.rot || 0, f.x, f.y)
+    .attr({
+      'pointer-events': 'none',
+      opacity,
+      color: furnColor,
+    })
 
-    if (isSel) {
-      // пунктир вместо solid
-      drawDashedBox(overlayG, {
-        cx: f.x,
-        cy: f.y,
-        w: f.w,
-        h: f.h,
-        angDeg: f.rot || 0,
-        invScale,
-        color: config.theme.wall.selected,
-        opacity: 0.95,
-      })
+  overlayG
+    .rect(f.w, f.h)
+    .center(f.x, f.y)
+    .rotate(f.rot || 0, f.x, f.y)
+    .fill({ color: '#000', opacity: 0 })
+    .attr({
+      'pointer-events': 'all',
+      'data-furniture-id': f.id,
+    })
 
-      const off = (Math.max(f.w, f.h) / 2) + (30 * invScale)
-      const h0 = rotatePointAround(f.x, f.y - off, f.x, f.y, f.rot || 0)
-
-      overlayG
-        .line(f.x, f.y, h0.x, h0.y)
-        .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.6 })
-        .attr({ 'pointer-events': 'none' })
-
-      overlayG
-        .circle(18 * invScale)
-        .center(h0.x, h0.y)
-        .fill('#fff')
-        .stroke({ width: 2 * invScale, color: config.theme.wall.selected })
-        .attr({
-          'pointer-events': 'all',
-          'data-furniture-rotate': f.id,
-        })
-    }
-  }
-
-  // ---- PREVIEW FURNITURE ----
-  if (state.mode === 'draw-furniture' && state.previewFurniture) {
-    const pf = state.previewFurniture
-    const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
-
-    const ok = pf.ok !== false
-    const op = ok ? 0.85 : 0.22
-    const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-
-    if (sym) {
-      overlayG
-        .use(sym)
-        .size(pf.w, pf.h)
-        .center(pf.x, pf.y)
-        .rotate(pf.rot || 0, pf.x, pf.y)
-        .attr({ 'pointer-events': 'none', opacity: op })
-    }
-
+  if (isSel) {
     drawDashedBox(overlayG, {
-      cx: pf.x,
-      cy: pf.y,
-      w: pf.w,
-      h: pf.h,
-      angDeg: pf.rot || 0,
+      cx: f.x,
+      cy: f.y,
+      w: f.w,
+      h: f.h,
+      angDeg: f.rot || 0,
       invScale,
-      color: strokeColor,
+      color: config.theme.wall.selected,
       opacity: 0.95,
     })
-  }
-  // 4) selected wall highlight + handles (walls)
-  if (state.selectedWallId) {
-    const w = normals.find(x => x.id === state.selectedWallId)
-    if (w) {
-      wallsG
-        .line(w.a.x, w.a.y, w.b.x, w.b.y)
-        .stroke({
-          width: NOR_W + 6,
-          color: config.theme.wall.selected,
-          opacity: 0.35,
-          linecap: 'butt',
-          linejoin: 'round',
-        })
-        .attr({ 'pointer-events': 'none' })
 
-      const r = config.render.handles.r
-      wallsG
-        .circle(r * 2)
-        .center(w.a.x, w.a.y)
-        .fill('#fff')
-        .stroke({ width: 3, color: config.theme.wall.selected })
-        .attr({ 'pointer-events': 'none' })
+    const off = (Math.max(f.w, f.h) / 2) + (30 * invScale)
+    const h0 = rotatePointAround(f.x, f.y - off, f.x, f.y, f.rot || 0)
 
-      wallsG
-        .circle(r * 2)
-        .center(w.b.x, w.b.y)
-        .fill('#fff')
-        .stroke({ width: 3, color: config.theme.wall.selected })
-        .attr({ 'pointer-events': 'none' })
-    }
+    overlayG
+      .line(f.x, f.y, h0.x, h0.y)
+      .stroke({ width: 2 * invScale, color: config.theme.wall.selected, opacity: 0.6 })
+      .attr({ 'pointer-events': 'none' })
+
+    overlayG
+      .circle(18 * invScale)
+      .center(h0.x, h0.y)
+      .fill('#fff')
+      .stroke({ width: 2 * invScale, color: config.theme.wall.selected })
+      .attr({
+        'pointer-events': 'all',
+        'data-furniture-rotate': f.id,
+      })
   }
+}
+
+ // ---- PREVIEW FURNITURE ----
+if (state.mode === 'draw-furniture' && state.previewFurniture) {
+  const pf = state.previewFurniture
+  const sym = pf.symbolId ? draw.defs().findOne(`#${pf.symbolId}`) : null
+
+  const ok = pf.ok !== false
+  const op = ok ? 0.85 : 0.22
+  const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
+  const previewColor = ok ? FURN_PREVIEW_OK_COLOR : FURN_PREVIEW_INVALID_COLOR
+
+  if (sym) {
+    overlayG
+      .use(sym)
+      .size(pf.w, pf.h)
+      .center(pf.x, pf.y)
+      .rotate(pf.rot || 0, pf.x, pf.y)
+      .attr({
+        'pointer-events': 'none',
+        opacity: op,
+        color: previewColor,
+      })
+  }
+
+  drawDashedBox(overlayG, {
+    cx: pf.x,
+    cy: pf.y,
+    w: pf.w,
+    h: pf.h,
+    angDeg: pf.rot || 0,
+    invScale,
+    color: strokeColor,
+    opacity: 0.95,
+  })
+}
 
   // ---------- SNAP PULSE ----------
   {

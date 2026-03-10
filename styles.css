@@ -255,8 +255,6 @@ body {
   transition: color 0.2s;
 }
 
-
-
 @media (hover: hover) {
   .label:hover {
     color: #0a84ff;
