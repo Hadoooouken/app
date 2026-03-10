@@ -640,6 +640,12 @@
             d="M18.04 7.05l64.92 0 0 24.99c0.92,36.23 -16.14,53.11 -50.88,50.94l-25.04 0 0 -64.92c0.19,-7.05 3.8,-10.78 11,-11.01z" />
         <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="18.25" cy="18" r="4" />
     </symbol>
+    <symbol id="mebel-stoyak" viewBox="0 0 50 28">
+        <rect fill="white" stroke="currentColor" stroke-width="2" x="1" y="1" width="48" height="25" />
+        <circle fill="none" stroke="currentColor" stroke-width="2" cx="12.86" cy="13.37" r="7" />
+        <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="29" cy="14" r="3" />
+        <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="41" cy="14" r="3" />
+    </symbol>
 
 
 </svg>
