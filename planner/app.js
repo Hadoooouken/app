@@ -301,19 +301,28 @@ function buildFurnitureMenu() {
       row.appendChild(label)
       row.appendChild(size)
 
-      row.addEventListener('click', () => {
-        state.draftFurnitureTypeId = it.typeId
+row.addEventListener('click', () => {
+  state.draftFurnitureTypeId = it.typeId
 
-        if (isMobileUI()) {
-          setMobileMode('select')
-        }
+  if (isMobileUI()) {
+    setMobileMode('select')
+  }
 
-        setMode('draw-furniture')
-        hideFurnitureMenu()
+  setMode('draw-furniture')
+  hideFurnitureMenu()
 
-        const p0 = lastPointerWorld || getViewportCenterWorld()
-        spawnFurniturePreviewAtPoint(p0)
-      })
+  // На мобилке не используем lastPointerWorld,
+  // потому что он может быть от прошлой мебели / прошлого тапа.
+  // Показываем превью сразу по центру экрана.
+  if (isMobileUI()) {
+    const p0 = getViewportCenterWorld()
+    spawnFurniturePreviewAtPoint(p0)
+    return
+  }
+
+  const p0 = lastPointerWorld || getViewportCenterWorld()
+  spawnFurniturePreviewAtPoint(p0)
+})
 
       items.appendChild(row)
     }
@@ -1967,44 +1976,20 @@ draw.node.addEventListener('pointerdown', (e) => {
 
   const p = screenToWorld(draw, e.clientX, e.clientY)
 
-  // --- furniture: rotate handle (works in idle and draw-furniture) ---
-  const rotId = findFurnitureRotateIdFromEventTarget(e.target)
-  if (rotId) {
-    e.preventDefault()
-    draw.node.setPointerCapture?.(e.pointerId)
-
-    state.selectedFurnitureId = rotId
-    state.selectedWallId = null
-    state.selectedDoorId = null
-
-    startFurnitureRotate(rotId, p)
-    scheduleRerender()
-    return
-  }
-
-  // --- furniture: body hit -> move (works in idle and draw-furniture) ---
-  const fid = findFurnitureIdFromEventTarget(e.target)
-  if (fid) {
-    e.preventDefault()
-    draw.node.setPointerCapture?.(e.pointerId)
-
-    state.selectedFurnitureId = fid
-    state.selectedWallId = null
-    state.selectedDoorId = null
-
-    startFurnitureMove(fid, p)
-    scheduleRerender()
-    return
-  }
-
+  // --- draw-furniture: постановка новой мебели имеет приоритет ---
+  // Пока активен режим добавления мебели, тап/клик по уже существующей мебели
+  // НЕ должен запускать её move/rotate. Он должен ставить новый объект.
   if (state.mode === 'draw-furniture') {
     const typeId = state.draftFurnitureTypeId
     const meta = typeId ? FURN_BY_TYPE.get(typeId) : null
-    const pf = state.previewFurniture
+    if (!meta) return
 
     // mouse: click = place
     if (e.pointerType === 'mouse') {
-      if (!meta || !pf || pf.ok === false) return
+      updateFurniturePreviewAtPoint(p)
+
+      const pf = state.previewFurniture
+      if (!pf || pf.ok === false) return
 
       historyCommit('add-furniture')
       state.furniture ??= []
@@ -2033,7 +2018,6 @@ draw.node.addEventListener('pointerdown', (e) => {
     }
 
     // touch: начать placement (добавление будет в pointerup)
-    if (!meta) return
     e.preventDefault()
     draw.node.setPointerCapture?.(e.pointerId)
 
@@ -2046,7 +2030,37 @@ draw.node.addEventListener('pointerdown', (e) => {
     return
   }
 
-    // --- wall resize by handles ---
+  // --- furniture: rotate handle (works only вне режима draw-furniture) ---
+  const rotId = findFurnitureRotateIdFromEventTarget(e.target)
+  if (rotId) {
+    e.preventDefault()
+    draw.node.setPointerCapture?.(e.pointerId)
+
+    state.selectedFurnitureId = rotId
+    state.selectedWallId = null
+    state.selectedDoorId = null
+
+    startFurnitureRotate(rotId, p)
+    scheduleRerender()
+    return
+  }
+
+  // --- furniture: body hit -> move (works only вне режима draw-furniture) ---
+  const fid = findFurnitureIdFromEventTarget(e.target)
+  if (fid) {
+    e.preventDefault()
+    draw.node.setPointerCapture?.(e.pointerId)
+
+    state.selectedFurnitureId = fid
+    state.selectedWallId = null
+    state.selectedDoorId = null
+
+    startFurnitureMove(fid, p)
+    scheduleRerender()
+    return
+  }
+
+  // --- wall resize by handles ---
   const handleHit = pickWallHandleAt(p, { tolPx: HANDLE_TOL_PX })
   if (handleHit) {
     state.selectedWallId = handleHit.id
@@ -2059,26 +2073,26 @@ draw.node.addEventListener('pointerdown', (e) => {
   }
 
   const doorId = findDoorIdFromEventTarget(e.target)
-if (doorId) {
-  const d = getDoorById(doorId)
+  if (doorId) {
+    const d = getDoorById(doorId)
 
-  state.selectedDoorId = doorId
-  state.selectedWallId = null
-  state.selectedFurnitureId = null
+    state.selectedDoorId = doorId
+    state.selectedWallId = null
+    state.selectedFurnitureId = null
 
-  // hover можно сразу сбросить
-  state.hoverWallId = null
-  state.hoverFurnitureId = null
+    // hover можно сразу сбросить
+    state.hoverWallId = null
+    state.hoverFurnitureId = null
 
-  // двигать можно только межкомнатную и не locked
-  if (d && d.kind === 'interior' && !d.locked) {
-    draw.node.setPointerCapture?.(e.pointerId)
-    startDoorDrag(doorId)
+    // двигать можно только межкомнатную и не locked
+    if (d && d.kind === 'interior' && !d.locked) {
+      draw.node.setPointerCapture?.(e.pointerId)
+      startDoorDrag(doorId)
+    }
+
+    scheduleRerender()
+    return
   }
-
-  scheduleRerender()
-  return
-}
 
   // --- wall by DOM target (особенно важно на touch) ---
   const wallIdFromTarget = findWallIdFromEventTarget(e.target)
