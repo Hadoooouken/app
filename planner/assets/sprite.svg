@@ -624,14 +624,12 @@
             d="M132.07 74l-110.32 0c-8.66,0 -15.75,-8.11 -15.75,-18.01l0 -31.98c0,-9.9 7.1,-18.01 15.75,-18.01l110.32 0c17.55,0 31.93,10.82 31.93,30.89l0 6.22c0,20.07 -14.37,30.89 -31.93,30.89z" />
     </symbol>
 
-    <symbol id="mebel-rakovina" viewBox="0 0 66 50">
-        <path fill="white" stroke="currentColor" stroke-width="2"
-            d="M7.12 1l51.88 0c4.75,4.45 6.23,11.5 5.98,21.15 0,14.83 -14.31,26.85 -31.96,26.85 -17.66,0 -31.97,-12.02 -31.97,-26.85 -0.07,-10.55 1.95,-17.6 6.07,-21.15z" />
-        <path fill="none" stroke="currentColor" stroke-width="2"
-            d="M33.18 44.54c15.25,0 27.61,-10.29 27.61,-22.98 0,-3.41 -0.89,-6.64 -2.48,-9.54l-50.25 0c-1.59,2.9 -2.48,6.13 -2.48,9.54 0,12.69 12.36,22.98 27.6,22.98z" />
-        <ellipse fill="none" stroke="currentColor" stroke-width="2" cx="32.96" cy="19.08" rx="3.38"
-            ry="3.42" />
-    </symbol>
+    
+    <symbol id="mebel-rakovina" viewBox="0 0 58 44">  
+  <path fill="white" stroke="currentColor" stroke-width="2" d="M6.75 1l44.61 0c4.09,3.83 5.36,9.89 5.15,18.19 0,12.75 -12.31,23.09 -27.49,23.09 -15.18,0 -27.49,-10.34 -27.49,-23.09 -0.06,-9.08 1.67,-15.14 5.22,-18.19z"/>
+  <path fill="none" stroke="currentColor" stroke-width="2" d="M29.16 37.96c13.11,0 23.74,-8.85 23.74,-19.76 0,-2.93 -0.76,-5.7 -2.13,-8.2l-43.21 0c-1.37,2.5 -2.14,5.27 -2.14,8.2 0,10.91 10.63,19.76 23.74,19.76z"/>
+  <ellipse fill="none" stroke="currentColor" stroke-width="2" cx="28.97" cy="16.55" rx="2.9" ry="2.94"/>
+</symbol>
 
     <symbol id="mebel-kabina" viewBox="0 0 90 90">
         <path fill="white" stroke="currentColor" stroke-width="2"
@@ -646,6 +644,14 @@
         <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="29" cy="14" r="3" />
         <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="41" cy="14" r="3" />
     </symbol>
+    <symbol id="mebel-stoyak-vertical" viewBox="0 0 28 50">
+  <g transform="translate(28 0) rotate(90)">
+    <rect fill="white" stroke="currentColor" stroke-width="2" x="1" y="1" width="48" height="25" />
+    <circle fill="none" stroke="currentColor" stroke-width="2" cx="12.86" cy="13.37" r="7" />
+    <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="29" cy="14" r="3" />
+    <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="41" cy="14" r="3" />
+  </g>
+</symbol>
 
 
 </svg>

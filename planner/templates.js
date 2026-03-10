@@ -98,6 +98,16 @@ export function loadStudioTemplate() {
       y: 675,
       rot: 0,
     },
+        {
+      id: 'tpl_stoyak_2',
+      typeId: 'stoyak-certical',
+      symbolId: 'mebel-stoyak-vertical',
+      w: 28,
+      h: 50,
+      x: 330,
+      y: 355,
+      rot: 0,
+    },
   ]
 
   // сброс интерактива

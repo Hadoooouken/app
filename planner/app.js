@@ -1006,7 +1006,7 @@ btnWall?.addEventListener('click', (e) => {
 })
 // по умолчанию показываем
 state.ui ??= {}
-state.ui.showMetrics = state.ui.showMetrics ?? true
+state.ui.showMetrics = state.ui.showMetrics ?? !isMobileUI()
 
 btnMetrics?.addEventListener('click', (e) => {
   e.preventDefault()

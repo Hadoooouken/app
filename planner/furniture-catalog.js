@@ -41,7 +41,7 @@ export const FURN_CATEGORIES = [
         items: [
             { typeId: 'toilet', label: 'Унитаз', symbolId: 'mebel-unitaz', w: 36, h: 62 },
             { typeId: 'bath', label: 'Ванна', symbolId: 'mebel-vanna', w: 180, h: 80 },
-            { typeId: 'sink', label: 'Раковина', symbolId: 'mebel-rakovina', w: 66, h: 50 },
+            { typeId: 'sink', label: 'Раковина', symbolId: 'mebel-rakovina', w: 58, h: 44 },
             { typeId: 'shower', label: 'Душевая кабина', symbolId: 'mebel-kabina', w: 90, h: 90 },
         ],
     },
