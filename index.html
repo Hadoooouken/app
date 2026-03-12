@@ -16,7 +16,7 @@
     <div class="app-ui app-ui-left">
         <div class="main">
             <div>
-              
+
             </div>
             <div class="button" data-button="menu">
                 <div class="icon"><svg>
@@ -120,14 +120,17 @@
     <script src="./script.js"></script>
     <script type="module">
         import { Planner } from "./planner/app.js";
+
         Planner.init({
-            settings: { 
-                walls: { 
+            template: "templates/1.json",
+            config: {
+                walls: {
                     CAP_W: 50
                 },
                 theme: {
                     wall: {
-                        capital: '#2a4f3d'
+                        capital: "#2a4f3d",
+                        normal: "#2a4f3d"
                     }
                 }
             }

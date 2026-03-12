@@ -426,6 +426,23 @@ export function render(draw) {
   overlayG.clear()
   traceG.clear()
 
+  // ---------- TRACE IMAGE ----------
+  if (state.trace?.active && state.trace?.imageHref) {
+    const r = state.trace.rectWorld || { x: 0, y: 0, w: 0, h: 0 }
+
+    if (r.w > 0 && r.h > 0) {
+      traceG
+        .image(state.trace.imageHref)
+        .move(r.x, r.y)
+        .size(r.w, r.h)
+        .opacity(state.trace.opacity ?? 0.55)
+        .attr({
+          'pointer-events': 'none',
+          preserveAspectRatio: 'none',
+        })
+    }
+  }
+
   const walls = state.walls || []
   const caps = walls.filter(w => w.kind === 'capital')
   const normals = walls.filter(w => w.kind !== 'capital')
@@ -562,7 +579,7 @@ export function render(draw) {
 
   // HIT lines — stable click area in px
   for (const w of normals) {
-    if (!w.id) continue
+    if (!w.id || w.locked) continue
 
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
@@ -871,17 +888,19 @@ export function render(draw) {
         color: furnColor,
       })
 
-    overlayG
-      .rect(f.w, f.h)
-      .center(f.x, f.y)
-      .rotate(f.rot || 0, f.x, f.y)
-      .fill({ color: '#000', opacity: 0 })
-      .attr({
-        'pointer-events': 'all',
-        'data-furniture-id': f.id,
-      })
+    if (!f.locked) {
+      overlayG
+        .rect(f.w, f.h)
+        .center(f.x, f.y)
+        .rotate(f.rot || 0, f.x, f.y)
+        .fill({ color: '#000', opacity: 0 })
+        .attr({
+          'pointer-events': 'all',
+          'data-furniture-id': f.id,
+        })
+    }
 
-    if (isSel) {
+    if (isSel && !f.locked) {
       drawDashedBox(overlayG, {
         cx: f.x,
         cy: f.y,

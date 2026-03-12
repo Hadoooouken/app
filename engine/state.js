@@ -9,7 +9,7 @@ export const state = {
   walls: [],
   doors: [],
   windows: [],
-  
+
 
   // selection / hover
   selectedWallId: null,
@@ -30,9 +30,10 @@ export const state = {
   snapPoint: null,
 
   trace: {
-    active: true,
-    imageHref: '../planner/assets/plan.jpg', // путь ОТ index.html (или от страницы, где открыт проект)
-    rectWorld: { x: 0, y: 0, w: 2000, h: 1200 }, // размеры в WORLD
+    active: false,
+    imageHref: '',
+    rectWorld: { x: 0, y: 0, w: 0, h: 0 },
+    opacity: 0.55,
     points: [],
   },
 

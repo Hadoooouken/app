@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "meta": {
+    "unit": "cm",
+    "pxToWorld": 1,
+    "createdAt": "2026-03-12T13:12:49.554Z",
+    "source": "draw.html"
+  },
+  "walls": [
+    {
+      "id": "7ce3859e-5640-4348-8e94-798f1370e519",
+      "kind": "capital",
+      "a": {
+        "x": -550,
+        "y": -400
+      },
+      "b": {
+        "x": -550,
+        "y": 350
+      }
+    },
+    {
+      "id": "02a8a103-dd7b-422b-b1d5-bef0eab7b5c9",
+      "kind": "capital",
+      "a": {
+        "x": -525,
+        "y": 350
+      },
+      "b": {
+        "x": 550,
+        "y": 350
+      }
+    },
+    {
+      "id": "26eb5316-5b9b-419c-ac0a-b7b81cdf6247",
+      "kind": "capital",
+      "a": {
+        "x": 550,
+        "y": 325
+      },
+      "b": {
+        "x": 550,
+        "y": -375
+      }
+    },
+    {
+      "id": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "kind": "capital",
+      "a": {
+        "x": 525,
+        "y": -375
+      },
+      "b": {
+        "x": -550,
+        "y": -375
+      }
+    },
+    {
+      "id": "7e48fda4-3401-4146-b54e-43b4883e6c14",
+      "kind": "capital",
+      "a": {
+        "x": -175,
+        "y": -375
+      },
+      "b": {
+        "x": -175,
+        "y": 100
+      }
+    },
+    {
+      "id": "a33c936b-3e90-40d0-af49-984a8d30435b",
+      "kind": "capital",
+      "a": {
+        "x": -175,
+        "y": 350
+      },
+      "b": {
+        "x": -175,
+        "y": 200
+      }
+    },
+    {
+      "id": "b12424f4-d1ae-4457-a3ef-dfc24fe1a6bf",
+      "kind": "capital",
+      "a": {
+        "x": -175,
+        "y": -250
+      },
+      "b": {
+        "x": -550,
+        "y": -250
+      }
+    }
+  ],
+  "windows": [
+    {
+      "id": "7f9abbb6-eee4-449c-99be-32f3ae7673c4",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.9302325581395349,
+      "w": 100
+    },
+    {
+      "id": "ffc9394a-930c-436c-9111-f7239c3f9e13",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.8604651162790697,
+      "w": 100
+    },
+    {
+      "id": "aa2dc8a8-d1f3-4704-8604-c019355a50e6",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.7674418604651163,
+      "w": 100
+    },
+    {
+      "id": "2622415e-c508-4bcc-9549-4dbbd0cc2a6b",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.6976744186046512,
+      "w": 100
+    },
+    {
+      "id": "f5221316-b12e-43dc-9c08-216fbd615ca4",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.5116279069767442,
+      "w": 100
+    },
+    {
+      "id": "f43933f8-b689-4231-92ac-c9d86293b0e9",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.16279069767441862,
+      "w": 100
+    },
+    {
+      "id": "4fa3cdc3-c532-4835-af1d-204b031168e8",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.09302325581395349,
+      "w": 100
+    },
+    {
+      "id": "674dc13f-ab55-4ad1-9260-683abbc7ebf6",
+      "kind": "std",
+      "wallId": "96c54cb3-6bac-4114-aa83-956f0ee0cda2",
+      "t": 0.4186046511627907,
+      "w": 100
+    }
+  ],
+  "doors": [
+    {
+      "id": "686176de-d544-49b9-afe3-ad5680009e0a",
+      "kind": "entry",
+      "wallId": "02a8a103-dd7b-422b-b1d5-bef0eab7b5c9",
+      "t": 0.46511627906976744,
+      "w": 90,
+      "thick": 40,
+      "locked": true
+    }
+  ],
+  "furniture": [
+    {
+      "id": "61e857c8-ed47-4558-884b-c50a838ce404",
+      "typeId": "stoyak",
+      "symbolId": "mebel-stoyak",
+      "w": 50,
+      "h": 28,
+      "x": 150,
+      "y": 350,
+      "rot": 0
+    },
+    {
+      "id": "29c8aeaa-4cf1-43ae-b6ef-3a75a1f5e99c",
+      "typeId": "stoyak-vertical",
+      "symbolId": "mebel-stoyak-vertical",
+      "w": 28,
+      "h": 50,
+      "x": -175,
+      "y": 0,
+      "rot": 0
+    }
+  ]
+}

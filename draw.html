@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0"
+  />
+  <title>DRAW TEMPLATE</title>
+  <link rel="stylesheet" type="text/css" href="./modern-normalize.min.css" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="workspace"></div>
+
+  <input
+    id="image-input"
+    type="file"
+    accept="image/png,image/jpeg,image/jpg"
+    hidden
+  />
+
+  <div class="app-ui app-ui-left">
+    <div class="main">
+      <div id="btn-load-image" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-menu"></use></svg>
+        </div>
+        <div class="label">Загрузить план</div>
+      </div>
+
+      <div id="tool-capital" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-wall"></use></svg>
+        </div>
+        <div class="label">Капиталка</div>
+      </div>
+
+      <div id="tool-window" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-wall"></use></svg>
+        </div>
+        <div class="label">Окно</div>
+      </div>
+
+      <div id="tool-balcony" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-wall"></use></svg>
+        </div>
+        <div class="label">Балкон</div>
+      </div>
+
+      <div id="tool-entry-door" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-door"></use></svg>
+        </div>
+        <div class="label">Входная дверь</div>
+      </div>
+
+      <div id="tool-riser-h" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-sofa"></use></svg>
+        </div>
+        <div class="label">Стояк H</div>
+      </div>
+
+      <div id="tool-riser-v" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-sofa"></use></svg>
+        </div>
+        <div class="label">Стояк V</div>
+      </div>
+
+      <div id="btn-undo" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-undo"></use></svg>
+        </div>
+        <div class="label">Undo</div>
+      </div>
+
+      <div id="btn-clear" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-trash"></use></svg>
+        </div>
+        <div class="label">Очистить</div>
+      </div>
+
+      <div id="btn-save-json" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-menu"></use></svg>
+        </div>
+        <div class="label">Сохранить JSON</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-ui app-ui-right">
+    <div class="main">
+      <div id="btn-center" class="button">
+        <div class="icon">
+          <svg><use href="./planner/assets/sprite.svg#ui-zoom-centred"></use></svg>
+        </div>
+        <div class="label">Центровать</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status" class="status"></div>
+  <div id="hint" class="hint"></div>
+
+  <script type="module" src="./planner/draw-app.js"></script>
+</body>
+</html>

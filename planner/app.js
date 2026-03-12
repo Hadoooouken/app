@@ -1,7 +1,7 @@
 // planner/app.js
-import { state } from '../engine/state.js'
+import { state, wid } from '../engine/state.js'
 import { config, CLEAR_FROM_CAPITAL } from '../engine/config.js'
-import { historyCommit, historyBegin, historyEnd, undo, redo, historyCanUndo } from '../engine/history.js'
+import { historyCommit, historyBegin, historyEnd, undo, redo, historyCanUndo, historyClear } from '../engine/history.js'
 
 import { createSVG, setZoomAtCenter, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
@@ -27,10 +27,12 @@ import {
 
 
 export const Planner = {
-  init: function (options = {}) {
+  init: async function (options = {}) {
 
-    if (options.settings) {
-      config.override(options.settings);
+    const runtimeConfig = options.config || options.settings || null
+
+    if (runtimeConfig) {
+      config.override(runtimeConfig)
     }
 
     const GRID_STEP_SNAP = config.grid.snapStep
@@ -58,6 +60,103 @@ export const Planner = {
     state.hoverFurnitureId = state.hoverFurnitureId ?? null
     state.previewFurniture = state.previewFurniture ?? null
     state.draftFurnitureTypeId = state.draftFurnitureTypeId ?? null
+
+    function resetPlannerStateForTemplate() {
+      historyClear()
+
+      state.mode = 'idle'
+      state.mobileMode = 'move'
+
+      state.walls = []
+      state.doors = []
+      state.windows = []
+      state.furniture = []
+
+      state.selectedWallId = null
+      state.hoverWallId = null
+      state.selectedDoorId = null
+      state.hoverDoorId = null
+      state.selectedFurnitureId = null
+      state.hoverFurnitureId = null
+
+      state.previewWall = null
+      state.previewDoor = null
+      state.previewFurniture = null
+
+      state.edit = null
+      state.snapPoint = null
+      state.cursorState = 'idle'
+
+      state.ui = { dragged: false, lockPan: false, snapPulse: null }
+
+      state.trace = {
+        active: false,
+        imageHref: '../planner/assets/plan.jpg',
+        rectWorld: { x: 0, y: 0, w: 2000, h: 1200 },
+        points: [],
+      }
+    }
+
+    async function loadTemplateJson(url) {
+      const res = await fetch(url, { cache: 'no-store' })
+      if (!res.ok) {
+        throw new Error(`Не удалось загрузить template: ${url} (${res.status})`)
+      }
+      return await res.json()
+    }
+
+    function applyTemplateData(templateData) {
+      resetPlannerStateForTemplate()
+
+      state.walls = (templateData.walls || []).map(w => ({
+        id: w.id || wid(),
+        kind: w.kind || 'capital',
+        a: { ...w.a },
+        b: { ...w.b },
+        locked: w.locked ?? true,
+      }))
+
+      state.windows = (templateData.windows || []).map(w => ({
+        id: w.id || wid(),
+        kind: w.kind || 'std',
+        wallId: w.wallId,
+        t: w.t,
+        w: w.w,
+        locked: w.locked ?? true,
+      }))
+
+      state.doors = (templateData.doors || []).map(d => ({
+        id: d.id || wid(),
+        kind: d.kind || 'entry',
+        wallId: d.wallId,
+        t: d.t,
+        w: d.w,
+        thick: d.thick ?? config.walls.CAP_W,
+        locked: d.locked ?? true,
+      }))
+
+      state.furniture = (templateData.furniture || []).map(f => ({
+        id: f.id || wid(),
+        typeId: f.typeId,
+        symbolId: f.symbolId,
+        w: f.w,
+        h: f.h,
+        x: f.x,
+        y: f.y,
+        rot: f.rot || 0,
+        locked: f.locked ?? true,
+      }))
+
+      state.draftFurnitureTypeId = null
+      state.selectedWallId = null
+      state.selectedDoorId = null
+      state.selectedFurnitureId = null
+      state.hoverWallId = null
+      state.hoverDoorId = null
+      state.hoverFurnitureId = null
+
+      ensureCapitalInnerFaces()
+    }
 
     function unitNormal(a, b) {
       const dx = b.x - a.x
@@ -801,17 +900,17 @@ export const Planner = {
 
       let canDelete = false
 
-      // Во время рисования не удаляем
       if (state.mode === 'draw-wall' || state.mode === 'draw-door' || state.mode === 'draw-furniture') {
         canDelete = false
       } else if (state.selectedFurnitureId) {
-        canDelete = (state.furniture || []).some(f => f.id === state.selectedFurnitureId)
+        const f = (state.furniture || []).find(x => x.id === state.selectedFurnitureId)
+        canDelete = !!f && !f.locked
       } else if (state.selectedDoorId) {
         const d = (state.doors || []).find(x => x.id === state.selectedDoorId)
         canDelete = !!d && d.kind === 'interior' && !d.locked
       } else if (state.selectedWallId) {
-        const w = (state.walls || []).find(w => w.id === state.selectedWallId)
-        canDelete = !!w && w.kind === 'normal'
+        const w = (state.walls || []).find(x => x.id === state.selectedWallId)
+        canDelete = !!w && w.kind === 'normal' && !w.locked
       }
 
       btnTrash.classList.toggle('inactive', !canDelete)
@@ -1069,7 +1168,10 @@ export const Planner = {
       // 0.5) Если выбрана мебель — удаляем её
       if (state.selectedFurnitureId) {
         const id = state.selectedFurnitureId
-        const idx = (state.furniture || []).findIndex(f => f.id === id)
+        const f = (state.furniture || []).find(x => x.id === id)
+        if (!f || f.locked) return
+
+        const idx = (state.furniture || []).findIndex(x => x.id === id)
         if (idx === -1) return
 
         historyCommit('delete-furniture')
@@ -1101,7 +1203,7 @@ export const Planner = {
 
       const wIdx = (state.walls || []).findIndex(w => w.id === wallId)
       if (wIdx === -1) return
-      if (state.walls[wIdx].kind !== 'normal') return
+      if (state.walls[wIdx].kind !== 'normal' || state.walls[wIdx].locked) return
 
       historyCommit('delete-wall')
       state.walls.splice(wIdx, 1)
@@ -1115,7 +1217,7 @@ export const Planner = {
 
     function startFurnitureMove(id, mouseWorld) {
       const f = getFurnitureById(id)
-      if (!f) return
+      if (!f || f.locked) return
 
       historyBegin('move-furniture')
       state.ui = state.ui || {}
@@ -1132,7 +1234,7 @@ export const Planner = {
 
     function startFurnitureRotate(id, mouseWorld) {
       const f = getFurnitureById(id)
-      if (!f) return
+      if (!f || f.locked) return
 
       historyBegin('rotate-furniture')
       state.ui ||= {}
@@ -1744,7 +1846,7 @@ export const Planner = {
 
     function startEdit(kind, wallId, mouseWorld) {
       const w = getWallById(wallId)
-      if (!w || w.kind === 'capital') return
+      if (!w || w.kind === 'capital' || w.locked) return
 
       historyBegin(kind)
 
@@ -2037,8 +2139,12 @@ export const Planner = {
       }
 
       // --- furniture: rotate handle (works only вне режима draw-furniture) ---
+
       const rotId = findFurnitureRotateIdFromEventTarget(e.target)
       if (rotId) {
+        const f = getFurnitureById(rotId)
+        if (!f || f.locked) return
+
         e.preventDefault()
         draw.node.setPointerCapture?.(e.pointerId)
 
@@ -2054,6 +2160,9 @@ export const Planner = {
       // --- furniture: body hit -> move (works only вне режима draw-furniture) ---
       const fid = findFurnitureIdFromEventTarget(e.target)
       if (fid) {
+        const f = getFurnitureById(fid)
+        if (!f || f.locked) return
+
         e.preventDefault()
         draw.node.setPointerCapture?.(e.pointerId)
 
@@ -2306,13 +2415,24 @@ export const Planner = {
 
     // -------- start --------
     syncUI()
-    loadStudioTemplate()
-    initWindowsFromTemplate()
+
+    try {
+      if (options.template) {
+        const templateData = await loadTemplateJson(options.template)
+        applyTemplateData(templateData)
+      } else {
+        loadStudioTemplate()
+        initWindowsFromTemplate()
+      }
+    } catch (err) {
+      console.error(err)
+      loadStudioTemplate()
+      initWindowsFromTemplate()
+    }
+
     requestAnimationFrame(() => {
       fitPlannerToWalls()
       rerender()
-
-      // ✅ один раз запоминаем “как было в темплейте”
       captureTemplateSnapshotOnce()
     })
 
