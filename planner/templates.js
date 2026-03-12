@@ -15,17 +15,17 @@ function did() {
   return `d${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
-const CAP_W = config.walls.CAP_W
-
 // Окна/балконный блок только на капитальных стенах
-export const studioWindows = [
-  { wallId: 'w1', t: 165 / 1050, kind: 'std', w: 330 - CAP_W },
-  { wallId: 'w1', t: 0.50, kind: 'std', w: 170 },
-  { wallId: 'w1', t: 0.80, kind: 'std', w: 170 },
+export function getStudioWindows() {
+  return [
+    { wallId: 'w1', t: 165 / 1050, kind: 'std', w: 330 - config.walls.CAP_W },
+    { wallId: 'w1', t: 0.50, kind: 'std', w: 170 },
+    { wallId: 'w1', t: 0.80, kind: 'std', w: 170 },
 
-  // выход на балкон
-  { wallId: 'w5', t: 0.40, kind: 'balcony', w: 180 },
-]
+    // выход на балкон
+    { wallId: 'w5', t: 0.40, kind: 'balcony', w: 180 },
+  ]
+}
 
 export function loadStudioTemplate() {
   id = 1
@@ -78,13 +78,13 @@ export function loadStudioTemplate() {
       wallId: capBottom.id,
       t: 0.54,
       w: 90,
-      thick: CAP_W,
+      thick: config.walls.CAP_W,
       locked: true,
     },
   ]
 
   // только окна/балконный блок
-  state.windows = [...studioWindows]
+  state.windows = getStudioWindows()
 
   // стартовая мебель шаблона
   state.furniture = [

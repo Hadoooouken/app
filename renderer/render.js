@@ -5,19 +5,6 @@ import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 import { computeRooms } from '../engine/rooms.js'
 import { fmtM2 } from '../engine/metrics.js'
 
-// aliases from config (НЕ хардкод)
-const CAP_W = config.walls.CAP_W
-const NOR_W = config.walls.NOR_W
-
-// цвет SVG мебели
-const FURN_SVG_COLOR = config.theme.wall.normal
-const FURN_SVG_HOVER_COLOR = config.theme.wall.hover
-const FURN_SVG_SELECTED_COLOR = config.theme.wall.selected
-
-// цвет SVG превью мебели
-const FURN_PREVIEW_OK_COLOR = config.theme.wall.selected
-const FURN_PREVIEW_INVALID_COLOR = config.theme.cursor.invalid
-
 // --- helpers ---
 function keyOf(p) {
   return `${Math.round(p.x * 1000)}:${Math.round(p.y * 1000)}`
@@ -168,9 +155,9 @@ function currentNormalWallStrokeWidth(w) {
   const isSelected = w.id && w.id === state.selectedWallId
   const isHovered = !isSelected && w.id && w.id === state.hoverWallId
 
-  let sw = NOR_W
-  if (isHovered) sw = NOR_W + (config.theme.wall.hoverExtraW ?? 2)
-  if (isSelected) sw = NOR_W + (config.theme.wall.selectedExtraW ?? 4)
+  let sw = config.walls.NOR_W
+  if (isHovered) sw = config.walls.NOR_W + (config.theme.wall.hoverExtraW ?? 2)
+  if (isSelected) sw = config.walls.NOR_W + (config.theme.wall.selectedExtraW ?? 4)
   return sw
 }
 
@@ -448,7 +435,7 @@ export function render(draw) {
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
-        width: CAP_W,
+        width: config.walls.CAP_W,
         color: config.theme.wall.capital,
         linecap: 'square',   // ✅ вместо round
         linejoin: 'miter',   // не критично, но логично для "прямых"
@@ -496,7 +483,7 @@ export function render(draw) {
       const q1 = { x: p1.x + nx * out, y: p1.y + ny * out }
       const q2 = { x: p2.x + nx * out, y: p2.y + ny * out }
 
-      const thick = (win.thick ?? CAP_W)
+      const thick = (win.thick ?? config.walls.CAP_W)
 
       // --- SVG symbol вместо линии ---
       // обычное окно или балкон (если ты так помечаешь)
@@ -546,17 +533,17 @@ export function render(draw) {
     const isHovered = !isSelected && w.id && w.id === state.hoverWallId
 
     let stroke = config.theme.wall.normal
-    let strokeWidth = NOR_W
+    let strokeWidth = config.walls.NOR_W
     let opacity = 1
 
     if (isHovered) {
       stroke = config.theme.wall.hover
-      strokeWidth = NOR_W + (config.theme.wall.hoverExtraW ?? 2)
+      strokeWidth = config.walls.NOR_W + (config.theme.wall.hoverExtraW ?? 2)
       opacity = config.theme.wall.hoverOpacity ?? 0.95
     }
     if (isSelected) {
       stroke = config.theme.wall.selected
-      strokeWidth = NOR_W + (config.theme.wall.selectedExtraW ?? 4)
+      strokeWidth = config.walls.NOR_W + (config.theme.wall.selectedExtraW ?? 4)
       opacity = config.theme.wall.selectedOpacity ?? 1
     }
 
@@ -602,7 +589,7 @@ export function render(draw) {
   }
 
   const drawn = new Set()
-  const nodeSize = NOR_W
+  const nodeSize = config.walls.NOR_W
   for (const w of normals) {
     for (const p of [w.a, w.b]) {
       const k = keyOf(p)
@@ -658,7 +645,7 @@ export function render(draw) {
     const doorW = d.w ?? defaultW
     const half = doorW / 2
 
-    const thick = (d.thick ?? NOR_W)
+    const thick = (d.thick ?? config.walls.NOR_W)
 
     const tRaw = clamp((d.t ?? 0.5), 0, 1)
     const { trimA, trimB } = normalTrim(w)
@@ -675,7 +662,7 @@ export function render(draw) {
     const p2 = { x: cx + u0x * half, y: cy + u0y * half }
 
     // anti-alias fix: подложка под проём (ТОЛЬКО по толщине)
-    const wallStroke = (w.kind === 'capital') ? CAP_W : currentNormalWallStrokeWidth(w)
+    const wallStroke = (w.kind === 'capital') ? config.walls.CAP_W : currentNormalWallStrokeWidth(w)
     const bleed = BLEED_PX * invScale
 
     overlayG
@@ -762,14 +749,14 @@ export function render(draw) {
 
     const doorW = pd.w ?? config.doors.defaultInteriorW
     const half = doorW / 2
-    const thick = pd.thick ?? NOR_W
+    const thick = pd.thick ?? config.walls.NOR_W
 
     let cx = pd.x
     let cy = pd.y
     let ang = 0
     let ok = false
 
-    let wallStroke = NOR_W
+    let wallStroke = config.walls.NOR_W
 
     if (pd.wallId) {
       const ww = (state.walls || []).find(x => x.id === pd.wallId)
@@ -865,10 +852,10 @@ export function render(draw) {
     const opacity = isHover ? 0.92 : 1
 
     const furnColor = isSel
-      ? FURN_SVG_SELECTED_COLOR
+      ? config.theme.wall.selected
       : isHover
-        ? FURN_SVG_HOVER_COLOR
-        : FURN_SVG_COLOR
+        ? config.theme.wall.hover
+        : config.theme.wall.normal
 
     const sym = draw.defs().findOne(`#${f.symbolId}`)
     if (!sym) continue
@@ -934,7 +921,7 @@ export function render(draw) {
     const ok = pf.ok !== false
     const op = ok ? 0.85 : 0.22
     const strokeColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
-    const previewColor = ok ? FURN_PREVIEW_OK_COLOR : FURN_PREVIEW_INVALID_COLOR
+    const previewColor = ok ? config.theme.wall.selected : config.theme.cursor.invalid
 
     if (sym) {
       overlayG
@@ -968,7 +955,7 @@ export function render(draw) {
       wallsG
         .line(w.a.x, w.a.y, w.b.x, w.b.y)
         .stroke({
-          width: NOR_W + 6,
+          width: config.walls.NOR_W + 6,
           color: config.theme.wall.selected,
           opacity: 0.35,
           linecap: 'butt',
@@ -1067,7 +1054,7 @@ export function render(draw) {
 
       const offsetFromWall =
         (w.kind === 'capital')
-          ? (CAP_W / 2) + offCapExtraPx
+          ? (config.walls.CAP_W / 2) + offCapExtraPx
           : offNormalPx
 
       const lx = mid.x + nx * offsetFromWall

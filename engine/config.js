@@ -325,6 +325,41 @@ export const config = {
         },
         canvas: { bg: '#F2EEE5' },
     },
+    
+    override: function(settings) {
+        if (!settings || typeof settings !== 'object') {
+            return;
+        }
+
+        const mergeKnownKeys = (target, source) => {
+            Object.keys(source).forEach((key) => {
+                if (!(key in target)) {
+                    return;
+                }
+
+                const sourceValue = source[key];
+                const targetValue = target[key];
+                const isObject =
+                    sourceValue &&
+                    typeof sourceValue === 'object' &&
+                    !Array.isArray(sourceValue);
+
+                if (
+                    isObject &&
+                    targetValue &&
+                    typeof targetValue === 'object' &&
+                    !Array.isArray(targetValue)
+                ) {
+                    mergeKnownKeys(targetValue, sourceValue);
+                    return;
+                }
+
+                target[key] = sourceValue;
+            });
+        };
+
+        mergeKnownKeys(this, settings);
+    }
 }
 
 // -------------------------

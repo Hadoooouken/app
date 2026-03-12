@@ -28,7 +28,7 @@ const TAP_THRESH_PX = 10
 const CANCEL_A_PX = 14
 const DRAG_START_PX = 10 // порог чтобы считать drag на таче
 
-const MIN_WALL_LEN = config.walls.MIN_LEN
+const minWallLen = () => config.walls.MIN_LEN
 
 const clearPulse = () => {
   if (state.ui) state.ui.snapPulse = null
@@ -42,7 +42,7 @@ const isCoarse = () => {
 const isTouchLikePointer = (pointerType) => pointerType !== 'mouse' || isCoarse()
 
 // ✅ для рисования clearance мягче
-const DRAW_CLEAR = Math.max(0, CLEAR_FROM_CAPITAL() * 0.1)
+const drawClear = () => Math.max(0, CLEAR_FROM_CAPITAL() * (config.constraints?.drawClearMul ?? 0.1))
 
 // --------------------------------------------------
 // ✅ FIX: isSegmentAllowed должен иметь tolPx >= радиуса снапа
@@ -266,10 +266,10 @@ export function initPointer(draw, { newWallId } = {}) {
     state.snapPoint = { ...pSnap }
 
     const len = Math.hypot(pFinal.x - firstPoint.x, pFinal.y - firstPoint.y)
-    const okLen = len >= MIN_WALL_LEN
+    const okLen = len >= minWallLen()
 
     const okAllowed = allowedDraw(firstPoint, pFinal)
-    const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, DRAW_CLEAR)
+    const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, drawClear())
     const ok = okLen && okAllowed && okClear
 
     state.cursorState = ok ? 'valid' : 'invalid'
@@ -406,13 +406,13 @@ export function initPointer(draw, { newWallId } = {}) {
       const pFinal = { ...preview.b }
 
       const len = Math.hypot(pFinal.x - firstPoint.x, pFinal.y - firstPoint.y)
-      if (len < MIN_WALL_LEN) {
+      if (len < minWallLen()) {
         resetAll()
         return
       }
 
       const okAllowed = allowedDraw(firstPoint, pFinal)
-      const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, DRAW_CLEAR)
+      const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, drawClear())
       if (!(okAllowed && okClear)) {
         resetAll()
         return
@@ -424,7 +424,7 @@ export function initPointer(draw, { newWallId } = {}) {
       trimWallToCapitals(newWall)
 
       const okAllowed2 = allowedDraw(newWall.a, newWall.b)
-      const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, DRAW_CLEAR)
+      const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, drawClear())
       if (!(okAllowed2 && okClear2)) {
         resetAll()
         return
@@ -478,13 +478,13 @@ export function initPointer(draw, { newWallId } = {}) {
     state.snapPoint = { ...pSnap }
 
     const len = Math.hypot(pFinal.x - firstPoint.x, pFinal.y - firstPoint.y)
-    if (len < MIN_WALL_LEN) {
+    if (len < minWallLen()) {
       cancelInvalidB(pSnap, e.pointerType)
       return
     }
 
     const okAllowed = allowedDraw(firstPoint, pFinal)
-    const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, DRAW_CLEAR)
+    const okClear = isSegmentClearOfCapitals(firstPoint, pFinal, drawClear())
     if (!(okAllowed && okClear)) {
       cancelInvalidB(pSnap, e.pointerType)
       return
@@ -496,7 +496,7 @@ export function initPointer(draw, { newWallId } = {}) {
     trimWallToCapitals(newWall)
 
     const okAllowed2 = allowedDraw(newWall.a, newWall.b)
-    const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, DRAW_CLEAR)
+    const okClear2 = isSegmentClearOfCapitals(newWall.a, newWall.b, drawClear())
     if (!(okAllowed2 && okClear2)) {
       cancelInvalidB(pSnap, e.pointerType)
       return

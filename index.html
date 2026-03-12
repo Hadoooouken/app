@@ -118,7 +118,21 @@
     </div>
     </div>
     <script src="./script.js"></script>
-    <script type="module" src="./planner/app.js"></script>
+    <script type="module">
+        import { Planner } from "./planner/app.js";
+        Planner.init({
+            settings: { 
+                walls: { 
+                    CAP_W: 50
+                },
+                theme: {
+                    wall: {
+                        capital: '#2a4f3d'
+                    }
+                }
+            }
+        });
+    </script>
 </body>
 
 </html>

@@ -2,8 +2,7 @@ import { state } from './state.js'
 import { config } from './config.js'
 
 const EPS = 1e-9
-const UNITS_PER_M = config.units.UNITS_PER_M
-const unitsToMeters = (u) => u / UNITS_PER_M
+const unitsToMeters = (u) => u / config.units.UNITS_PER_M
 
 // ======================================================
 // ✅ ЕДИНЫЙ ИСТОЧНИК ГЕОМЕТРИИ ДЛЯ МЕТРИК
@@ -123,7 +122,8 @@ export function capitalAreaUnits2() {
 }
 
 export function capitalAreaM2() {
-  return capitalAreaUnits2() / (UNITS_PER_M * UNITS_PER_M)
+  const unitsPerM = config.units.UNITS_PER_M
+  return capitalAreaUnits2() / (unitsPerM * unitsPerM)
 }
 
 // ======================================================
