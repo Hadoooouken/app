@@ -449,16 +449,20 @@ export function render(draw) {
 
   // 1) CAPITAL
   for (const w of caps) {
+const capitalLinecap = 'square'
+
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
         width: config.walls.CAP_W,
         color: config.theme.wall.capital,
-        linecap: 'square',   // ✅ вместо round
-        linejoin: 'miter',   // не критично, но логично для "прямых"
+        linecap: capitalLinecap,
+        linejoin: 'miter',
       })
       .attr({ 'pointer-events': 'none' })
   }
+
+
 
   // ---- WINDOWS (only capital) ----
   const windows = state.windows || []

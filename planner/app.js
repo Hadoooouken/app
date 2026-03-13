@@ -34,7 +34,7 @@ export const Planner = {
     if (runtimeConfig) {
       config.override(runtimeConfig)
     }
-
+    state.editorType = 'planner'
     const GRID_STEP_SNAP = config.grid.snapStep
     const NOR_W = config.walls.NOR_W
     const CLEAR_CAP = CLEAR_FROM_CAPITAL() // ✅ важно: это число
