@@ -22,56 +22,6 @@ function angleDeg(a, b) {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
-// function drawDashedBox(g, {
-//   cx, cy, w, h, angDeg,
-//   invScale,
-//   color,
-//   opacity = 0.95,
-// } = {}) {
-//   const isCoarse = matchMedia('(pointer: coarse)').matches
-
-//   const STROKE_PX = isCoarse ? 2.5 : 2
-//   const baseDashPx = isCoarse ? 10 : 8
-//   const baseGapPx = isCoarse ? 8 : 6
-
-//   // чем меньше scale (чем сильнее отдалили), тем сильнее режим "редкий пунктир"
-//   const zoom = 1 / invScale
-
-//   let dashPx = baseDashPx
-//   let gapPx = baseGapPx
-
-//   if (zoom < 0.8) {
-//     dashPx = isCoarse ? 8 : 6
-//     gapPx = isCoarse ? 10 : 8
-//   }
-
-//   if (zoom < 0.5) {
-//     dashPx = isCoarse ? 6 : 5
-//     gapPx = isCoarse ? 12 : 10
-//   }
-
-//   if (zoom < 0.35) {
-//     //пунтирная линия для маленького зума
-//     // dashPx = isCoarse ? 5 : 4
-//     // gapPx = isCoarse ? 14 : 12
-//     dashPx = isCoarse ? 4 : 3
-//     gapPx = isCoarse ? 16 : 14
-//   }
-
-//   const strokeW = STROKE_PX * invScale
-//   const dash = `${dashPx * invScale} ${gapPx * invScale}`
-
-//   g.rect(w, h)
-//     .center(cx, cy)
-//     .rotate(angDeg, cx, cy)
-//     .fill({ color: '#000', opacity: 0 })
-//     .stroke({ width: strokeW, color, opacity })
-//     .attr({
-//       'stroke-dasharray': dash,
-//       'pointer-events': 'none',
-//     })
-// }
-
 function drawDashedBox(g, {
   cx, cy, w, h, angDeg,
   invScale,
@@ -449,18 +399,18 @@ export function render(draw) {
 
   // 1) CAPITAL
   for (const w of caps) {
-const capitalLinecap = 'square'
-
     wallsG
       .line(w.a.x, w.a.y, w.b.x, w.b.y)
       .stroke({
         width: config.walls.CAP_W,
         color: config.theme.wall.capital,
-        linecap: capitalLinecap,
+        linecap: 'square',
         linejoin: 'miter',
       })
       .attr({ 'pointer-events': 'none' })
   }
+
+
 
 
 
@@ -971,40 +921,43 @@ const capitalLinecap = 'square'
     })
   }
 
-  // 4) selected wall highlight + handles (walls)
-  if (state.selectedWallId) {
-    const w = normals.find(x => x.id === state.selectedWallId)
-    if (w) {
-      wallsG
-        .line(w.a.x, w.a.y, w.b.x, w.b.y)
-        .stroke({
-          width: config.walls.NOR_W + 6,
-          color: config.theme.wall.selected,
-          opacity: 0.35,
-          linecap: 'butt',
-          linejoin: 'round',
-        })
-        .attr({ 'pointer-events': 'none' })
+// 4) selected wall highlight + handles (walls)
+if (state.selectedWallId) {
+  const w = walls.find(x => x.id === state.selectedWallId)
+  if (w) {
+    const isCapitalSelected = w.kind === 'capital' && state.editorType === 'draw-template'
+    const baseW = isCapitalSelected ? config.walls.CAP_W : config.walls.NOR_W
+    const linecap = isCapitalSelected ? 'square' : 'butt'
 
-      const r = config.render?.handles?.r ?? 8
-      const handleStrokeW = config.render?.handles?.strokeW ?? 3
+    wallsG
+      .line(w.a.x, w.a.y, w.b.x, w.b.y)
+      .stroke({
+        width: baseW + 6,
+        color: config.theme.wall.selected,
+        opacity: 0.35,
+        linecap,
+        linejoin: 'round',
+      })
+      .attr({ 'pointer-events': 'none' })
 
-      wallsG
-        .circle(r * 2)
-        .center(w.a.x, w.a.y)
-        .fill('#fff')
-        .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
-        .attr({ 'pointer-events': 'none' })
+    const r = config.render?.handles?.r ?? 8
+    const handleStrokeW = config.render?.handles?.strokeW ?? 3
 
-      wallsG
-        .circle(r * 2)
-        .center(w.b.x, w.b.y)
-        .fill('#fff')
-        .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
-        .attr({ 'pointer-events': 'none' })
-    }
+    wallsG
+      .circle(r * 2)
+      .center(w.a.x, w.a.y)
+      .fill('#fff')
+      .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
+      .attr({ 'pointer-events': 'none' })
+
+    wallsG
+      .circle(r * 2)
+      .center(w.b.x, w.b.y)
+      .fill('#fff')
+      .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
+      .attr({ 'pointer-events': 'none' })
   }
-
+}
 
   // ---------- SNAP PULSE ----------
   {
@@ -1158,16 +1111,32 @@ const capitalLinecap = 'square'
   // ---------- preview wall ----------
   if (state.previewWall) {
     const { a, b, ok } = state.previewWall
-    overlayG.line(a.x, a.y, b.x, b.y).stroke({
-      width: config.render.preview.strokeW,
-      color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
-      dasharray: '10 8',
-      linecap: 'round',
-    })
-  }
 
+    if (state.editorType === 'draw-template') {
+      overlayG
+        .line(a.x, a.y, b.x, b.y)
+        .stroke({
+          width: config.walls.CAP_W,
+          color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
+          opacity: 0.75,
+          linecap: 'square',
+          linejoin: 'miter',
+        })
+        .attr({ 'pointer-events': 'none' })
+    } else {
+      overlayG
+        .line(a.x, a.y, b.x, b.y)
+        .stroke({
+          width: config.render.preview.strokeW,
+          color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
+          dasharray: '10 8',
+          linecap: 'round',
+        })
+        .attr({ 'pointer-events': 'none' })
+    }
+  }
   // ---------- CURSOR DOT ----------
-  if (state.mode === 'draw-wall') {
+  if (state.mode === 'draw-wall' && state.editorType !== 'draw-template') {
     // курсор = конец previewWall если есть, иначе snapPoint
     const p = state.previewWall?.b || state.snapPoint
     if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {

@@ -1,6 +1,6 @@
 import { state, wid } from '../engine/state.js'
 import { config } from '../engine/config.js'
-import { historyCommit, undo } from '../engine/history.js'
+import { historyCommit, undo, historyBegin, historyEnd } from '../engine/history.js'
 import { createSVG, screenToWorld } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
 import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
@@ -24,6 +24,9 @@ export const DrawTemplate = {
         const btnUndo = document.getElementById('btn-undo')
         const btnCenter = document.getElementById('btn-center')
 
+        const btnBuildMode = document.getElementById('btn-build-mode')
+        const submenuBuild = document.getElementById('submenu-build')
+
         const btnCapital = document.getElementById('tool-capital')
         const btnWindow = document.getElementById('tool-window')
         const btnBalcony = document.getElementById('tool-balcony')
@@ -31,14 +34,21 @@ export const DrawTemplate = {
         const btnRiserH = document.getElementById('tool-riser-h')
         const btnRiserV = document.getElementById('tool-riser-v')
 
+
         const status = document.getElementById('status')
         const hint = document.getElementById('hint')
 
-        const CAPITAL_POINT_SNAP_PX = 14
-        const CAPITAL_AXIS_SNAP_PX = 10
+
+        const CAPITAL_POINT_SNAP_PX = 26   // сильнее липнем к готовым углам
+        const CAPITAL_AXIS_SNAP_PX = 14    // чуть шире допуск по X/Y
         const CAPITAL_HIT_PX = 24
-        const CAPITAL_SEG_SNAP_PX = 16
+        const CAPITAL_SEG_SNAP_PX = 28     // сильнее липнем к оси стены
+        const CAPITAL_END_SNAP_PX = 26     // липнем к концам сегмента
         const EPS_AXIS = 1e-6
+        const CAPITAL_PICK_WALL_PX = 18
+        const CAPITAL_PICK_HANDLE_PX = 16
+
+        let capitalEdit = null
 
         const RISER_H = {
             typeId: 'stoyak',
@@ -54,15 +64,30 @@ export const DrawTemplate = {
             h: 50,
         }
 
-        let currentTool = 'capital'
+        let currentTool = null
+        let editorMode = 'idle' // 'idle' | 'build'
         let capitalStart = null
 
         initState()
         state.editorType = 'draw-template'
 
         await loadFurnitureSpriteIntoDefs(draw)
+        syncUI()
         rerender()
-        setTool('capital')
+
+        btnBuildMode?.addEventListener('click', () => {
+            if (editorMode === 'build') {
+                exitBuildMode()
+                return
+            }
+
+            editorMode = 'build'
+            currentTool = null
+            cancelCapitalDraft()
+
+            syncUI()
+            rerender()
+        })
 
         btnLoadImage?.addEventListener('click', () => imageInput?.click())
         imageInput?.addEventListener('change', onImageSelected)
@@ -74,6 +99,8 @@ export const DrawTemplate = {
         })
         btnCenter?.addEventListener('click', centerScene)
 
+
+
         btnCapital?.addEventListener('click', () => setTool('capital'))
         btnWindow?.addEventListener('click', () => setTool('window'))
         btnBalcony?.addEventListener('click', () => setTool('balcony'))
@@ -83,8 +110,16 @@ export const DrawTemplate = {
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                cancelCapitalDraft()
-                rerender()
+                if (capitalStart) {
+                    cancelCapitalDraft()
+                    rerender()
+                    return
+                }
+
+                if (editorMode === 'build') {
+                    exitBuildMode()
+                    return
+                }
             }
 
             const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
@@ -99,7 +134,13 @@ export const DrawTemplate = {
         draw.node.addEventListener('pointermove', (e) => {
             const raw = screenToWorld(draw, e.clientX, e.clientY)
 
-            if (currentTool === 'capital' && capitalStart) {
+            if (editorMode !== 'build' && capitalEdit) {
+                applyCapitalEdit(raw)
+                rerender()
+                return
+            }
+
+            if (editorMode === 'build' && currentTool === 'capital' && capitalStart) {
                 const end = snapCapitalDraftPoint(raw, capitalStart, capitalStart)
 
                 state.mode = 'draw-wall'
@@ -125,7 +166,32 @@ export const DrawTemplate = {
 
             const raw = screenToWorld(draw, e.clientX, e.clientY)
 
+            // обычное состояние: редактирование capital
+            if (editorMode !== 'build') {
+                const handleHit = pickCapitalHandleAt(raw)
+                if (handleHit) {
+                    state.selectedWallId = handleHit.id
+                    startCapitalEdit(handleHit.handle, handleHit.id, raw)
+                    rerender()
+                    return
+                }
+
+                const wallHit = pickCapitalWallAt(raw)
+                if (wallHit) {
+                    state.selectedWallId = wallHit
+                    startCapitalEdit('move', wallHit, raw)
+                    rerender()
+                    return
+                }
+
+                state.selectedWallId = null
+                rerender()
+                return
+            }
+
+            // BUILD MODE
             if (currentTool === 'capital') {
+                state.selectedWallId = null
                 handleCapitalTool(raw)
                 return
             }
@@ -156,6 +222,20 @@ export const DrawTemplate = {
                 placeRiser(p, RISER_V)
                 return
             }
+        })
+
+        draw.node.addEventListener('pointerup', () => {
+            if (editorMode === 'build') return
+            if (!capitalEdit) return
+            stopCapitalEdit()
+            rerender()
+        })
+
+        draw.node.addEventListener('pointercancel', () => {
+            if (editorMode === 'build') return
+            if (!capitalEdit) return
+            stopCapitalEdit()
+            rerender()
         })
 
         function dist(a, b) {
@@ -210,6 +290,136 @@ export const DrawTemplate = {
             return pts
         }
 
+        function getCapitalById(id) {
+            return (state.walls || []).find(w => w && w.kind === 'capital' && w.id === id) || null
+        }
+
+        function pickCapitalHandleAt(worldPoint, { tolPx = CAPITAL_PICK_HANDLE_PX } = {}) {
+            const tolWorld = tolPx / Math.max(1e-6, state.view.scale)
+
+            let best = null
+
+            for (const w of (state.walls || [])) {
+                if (!w || w.kind !== 'capital') continue
+                if (!w.id) continue
+
+                const da = dist(worldPoint, w.a)
+                if (da <= tolWorld && (!best || da < best.d)) {
+                    best = { id: w.id, handle: 'a', d: da }
+                }
+
+                const db = dist(worldPoint, w.b)
+                if (db <= tolWorld && (!best || db < best.d)) {
+                    best = { id: w.id, handle: 'b', d: db }
+                }
+            }
+
+            return best ? { id: best.id, handle: best.handle } : null
+        }
+
+        function pickCapitalWallAt(worldPoint, { tolPx = CAPITAL_PICK_WALL_PX } = {}) {
+            const tolWorld = tolPx / Math.max(1e-6, state.view.scale)
+
+            let bestId = null
+            let bestD = Infinity
+
+            for (const w of (state.walls || [])) {
+                if (!w || w.kind !== 'capital') continue
+                if (!w.id) continue
+
+                const pr = projectPointToSegmentClamped(worldPoint, w.a, w.b)
+
+                // near ends -> handles, not body
+                if (pr.t <= 0.08 || pr.t >= 0.92) continue
+
+                if (pr.d <= tolWorld && pr.d < bestD) {
+                    bestD = pr.d
+                    bestId = w.id
+                }
+            }
+
+            return bestId
+        }
+
+        function startCapitalEdit(kind, wallId, mouseWorld) {
+            const w = getCapitalById(wallId)
+            if (!w) return
+
+            historyBegin(kind)
+
+            capitalEdit = {
+                id: wallId,
+                kind, // 'move' | 'a' | 'b'
+                startMouse: { ...mouseWorld },
+                startA: { ...w.a },
+                startB: { ...w.b },
+            }
+
+            state.selectedWallId = wallId
+        }
+
+        function applyCapitalEdit(mouseWorld) {
+            if (!capitalEdit) return
+
+            const w = getCapitalById(capitalEdit.id)
+            if (!w) return
+
+            const dx = mouseWorld.x - capitalEdit.startMouse.x
+            const dy = mouseWorld.y - capitalEdit.startMouse.y
+
+            let newA = { ...capitalEdit.startA }
+            let newB = { ...capitalEdit.startB }
+
+            if (capitalEdit.kind === 'move') {
+                newA = {
+                    x: capitalEdit.startA.x + dx,
+                    y: capitalEdit.startA.y + dy,
+                }
+                newB = {
+                    x: capitalEdit.startB.x + dx,
+                    y: capitalEdit.startB.y + dy,
+                }
+            }
+
+            if (capitalEdit.kind === 'a') {
+                const fixed = capitalEdit.startB
+                const moved = {
+                    x: capitalEdit.startA.x + dx,
+                    y: capitalEdit.startA.y + dy,
+                }
+
+                newA = snapCapitalDraftPoint(moved, fixed, capitalEdit.startA)
+                newB = { ...fixed }
+            }
+
+            if (capitalEdit.kind === 'b') {
+                const fixed = capitalEdit.startA
+                const moved = {
+                    x: capitalEdit.startB.x + dx,
+                    y: capitalEdit.startB.y + dy,
+                }
+
+                newB = snapCapitalDraftPoint(moved, fixed, capitalEdit.startB)
+                newA = { ...fixed }
+            }
+
+            if (isZeroLenSegment(newA, newB)) return
+
+            w.a = { ...newA }
+            w.b = { ...newB }
+
+            ensureCapitalInnerFaces()
+        }
+
+        function stopCapitalEdit() {
+            if (!capitalEdit) return
+            capitalEdit = null
+            historyEnd()
+        }
+
+
+        /////
+
         function snapCapitalStartPoint(raw) {
             const nodeTol = worldTol(CAPITAL_POINT_SNAP_PX)
             const segTol = worldTol(CAPITAL_SEG_SNAP_PX)
@@ -247,10 +457,12 @@ export const DrawTemplate = {
             const pointTol = worldTol(CAPITAL_POINT_SNAP_PX)
             const axisTol = worldTol(CAPITAL_AXIS_SNAP_PX)
             const segTol = worldTol(CAPITAL_SEG_SNAP_PX)
+            const endTol = worldTol(CAPITAL_END_SNAP_PX)
 
             const { point: ortho, axis } = orthogonalPoint(start, raw)
             const nodes = collectCapitalNodes(excludePoint)
 
+            // 1) сначала очень стараемся сесть именно в готовый угол
             let bestNode = null
             let bestNodeD = Infinity
 
@@ -273,39 +485,80 @@ export const DrawTemplate = {
                 return { x: bestNode.x, y: bestNode.y }
             }
 
-            let bestSeg = null
-            let bestSegD = Infinity
+            // 2) если угла рядом нет — липнем к совместимому сегменту,
+            //    но если рядом конец сегмента, то садимся именно в него
+            let best = null
+            let bestD = Infinity
 
             for (const w of (state.walls || [])) {
                 if (!w || w.kind !== 'capital') continue
 
-                const compatible =
-                    axis === 'h'
-                        ? isVerticalSeg(w.a, w.b)
-                        : isHorizontalSeg(w.a, w.b)
+                if (axis === 'h' && isVerticalSeg(w.a, w.b)) {
+                    const xWall = w.a.x
+                    const minY = Math.min(w.a.y, w.b.y)
+                    const maxY = Math.max(w.a.y, w.b.y)
 
-                if (!compatible) continue
+                    const dx = Math.abs(ortho.x - xWall)
+                    const insideY = start.y >= (minY - endTol) && start.y <= (maxY + endTol)
 
-                const pr = projectPointToSegmentClamped(ortho, w.a, w.b)
+                    if (!insideY || dx > segTol) continue
 
-                if (axis === 'h') {
-                    if (Math.abs(pr.point.y - start.y) > axisTol) continue
-                } else {
-                    if (Math.abs(pr.point.x - start.x) > axisTol) continue
+                    // если близко к концам вертикальной стены — липнем прямо в угол
+                    const dA = dist(ortho, w.a)
+                    const dB = dist(ortho, w.b)
+
+                    if (dA <= pointTol || dB <= pointTol) {
+                        const p = dA <= dB ? w.a : w.b
+                        const d = Math.min(dA, dB)
+                        if (d < bestD) {
+                            bestD = d
+                            best = { x: p.x, y: p.y }
+                        }
+                        continue
+                    }
+
+                    // иначе липнем к оси вертикальной стены
+                    if (dx < bestD) {
+                        bestD = dx
+                        best = { x: xWall, y: start.y }
+                    }
                 }
 
-                if (pr.d <= segTol && pr.d < bestSegD) {
-                    bestSeg = pr
-                    bestSegD = pr.d
+                if (axis === 'v' && isHorizontalSeg(w.a, w.b)) {
+                    const yWall = w.a.y
+                    const minX = Math.min(w.a.x, w.b.x)
+                    const maxX = Math.max(w.a.x, w.b.x)
+
+                    const dy = Math.abs(ortho.y - yWall)
+                    const insideX = start.x >= (minX - endTol) && start.x <= (maxX + endTol)
+
+                    if (!insideX || dy > segTol) continue
+
+                    // если близко к концам горизонтальной стены — липнем прямо в угол
+                    const dA = dist(ortho, w.a)
+                    const dB = dist(ortho, w.b)
+
+                    if (dA <= pointTol || dB <= pointTol) {
+                        const p = dA <= dB ? w.a : w.b
+                        const d = Math.min(dA, dB)
+                        if (d < bestD) {
+                            bestD = d
+                            best = { x: p.x, y: p.y }
+                        }
+                        continue
+                    }
+
+                    // иначе липнем к оси горизонтальной стены
+                    if (dy < bestD) {
+                        bestD = dy
+                        best = { x: start.x, y: yWall }
+                    }
                 }
             }
 
-            if (bestSeg) {
-                return axis === 'h'
-                    ? { x: bestSeg.point.x, y: start.y }
-                    : { x: start.x, y: bestSeg.point.y }
-            }
+            if (best) return best
 
+            // 3) fallback: снап по оси к ближайшим узлам
             const out = { ...ortho }
 
             if (axis === 'h') {
@@ -389,43 +642,76 @@ export const DrawTemplate = {
             }
         }
 
+        function exitBuildMode() {
+            editorMode = 'idle'
+            currentTool = null
+
+            cancelCapitalDraft()
+            capitalEdit = null
+            state.selectedWallId = null
+            state.previewWall = null
+            state.mode = 'idle'
+
+            syncUI()
+            rerender()
+        }
+
         function setTool(tool) {
             currentTool = tool
+            editorMode = 'build'
             cancelCapitalDraft()
 
-            btnCapital?.classList.toggle('is-active', tool === 'capital')
-            btnWindow?.classList.toggle('is-active', tool === 'window')
-            btnBalcony?.classList.toggle('is-active', tool === 'balcony')
-            btnEntryDoor?.classList.toggle('is-active', tool === 'entry-door')
-            btnRiserH?.classList.toggle('is-active', tool === 'riser-h')
-            btnRiserV?.classList.toggle('is-active', tool === 'riser-v')
+            syncUI()
+            rerender()
+        }
+        function syncUI() {
+            const isBuild = editorMode === 'build'
 
-            switch (tool) {
+            btnBuildMode?.classList.toggle('is-active', isBuild)
+
+            // Если в твоём CSS не is-open, а другой класс — замени только его имя
+            submenuBuild?.classList.toggle('is-open', isBuild)
+
+            btnCapital?.classList.toggle('is-active', isBuild && currentTool === 'capital')
+            btnWindow?.classList.toggle('is-active', isBuild && currentTool === 'window')
+            btnBalcony?.classList.toggle('is-active', isBuild && currentTool === 'balcony')
+            btnEntryDoor?.classList.toggle('is-active', isBuild && currentTool === 'entry-door')
+            btnRiserH?.classList.toggle('is-active', isBuild && currentTool === 'riser-h')
+            btnRiserV?.classList.toggle('is-active', isBuild && currentTool === 'riser-v')
+
+            if (!isBuild) {
+                hint.textContent = 'Редактирование: клик по capital для выбора. Тяни за тело — move, за конец — resize.'
+                return
+            }
+
+            if (!currentTool) {
+                hint.textContent = 'Строительство: выбери инструмент.'
+                return
+            }
+
+            switch (currentTool) {
                 case 'capital':
-                    hint.textContent = 'Капитальная стена: клик A, клик B. Стена рисуется строго по X/Y и магнитится к готовым углам.'
+                    hint.textContent = 'Строительство: клик A, клик B. Капиталка рисуется строго по X/Y.'
                     break
                 case 'window':
-                    hint.textContent = 'Окно: клик по капитальной стене.'
+                    hint.textContent = 'Строительство: клик по капитальной стене, чтобы поставить окно.'
                     break
                 case 'balcony':
-                    hint.textContent = 'Балконный блок: клик по капитальной стене.'
+                    hint.textContent = 'Строительство: клик по капитальной стене, чтобы поставить балкон.'
                     break
                 case 'entry-door':
-                    hint.textContent = 'Входная дверь: клик по капитальной стене.'
+                    hint.textContent = 'Строительство: клик по капитальной стене, чтобы поставить входную дверь.'
                     break
                 case 'riser-h':
-                    hint.textContent = 'Стояк H: клик по месту установки.'
+                    hint.textContent = 'Строительство: клик по месту установки стояка H.'
                     break
                 case 'riser-v':
-                    hint.textContent = 'Стояк V: клик по месту установки.'
+                    hint.textContent = 'Строительство: клик по месту установки стояка V.'
                     break
                 default:
                     hint.textContent = ''
             }
-
-            rerender()
         }
-
         function rerender() {
             render(draw)
             updateStatus()
@@ -437,12 +723,16 @@ export const DrawTemplate = {
             const doors = (state.doors || []).length
             const risers = (state.furniture || []).length
 
+            const toolLabel = currentTool ?? '—'
+            const modeLabel = editorMode === 'build' ? 'build' : 'edit'
+
             status.textContent =
-                `Tool: ${currentTool} | capital: ${caps} | windows: ${wins} | doors: ${doors} | risers: ${risers}`
+                `Mode: ${modeLabel} | Tool: ${toolLabel} | capital: ${caps} | windows: ${wins} | doors: ${doors} | risers: ${risers}`
         }
 
         function cancelCapitalDraft() {
             capitalStart = null
+            capitalEdit = null
             state.previewWall = null
             state.mode = 'idle'
         }
@@ -542,9 +832,8 @@ export const DrawTemplate = {
                 w: width,
             })
 
-            rerender()
+            exitBuildMode()
         }
-
         function placeEntryDoorOnCapital(p) {
             const hit = nearestCapitalHit(p)
             if (!hit) return
@@ -563,7 +852,7 @@ export const DrawTemplate = {
                 locked: true,
             })
 
-            rerender()
+            exitBuildMode()
         }
 
         function placeRiser(p, meta) {
@@ -580,7 +869,7 @@ export const DrawTemplate = {
                 rot: 0,
             })
 
-            rerender()
+            exitBuildMode()
         }
 
         async function onImageSelected(e) {
@@ -629,6 +918,9 @@ export const DrawTemplate = {
             state.windows = []
             state.doors = []
             state.furniture = []
+
+            capitalEdit = null
+            state.selectedWallId = null
 
             cancelCapitalDraft()
             rerender()

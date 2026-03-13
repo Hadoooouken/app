@@ -17,15 +17,67 @@
 
   <div class="app-ui app-ui-left">
     <div class="main">
-      <div id="btn-load-image" class="button">
+      <div class="button" data-button="menu">
         <div class="icon">
           <svg>
             <use href="./planner/assets/sprite.svg#ui-menu"></use>
           </svg>
         </div>
-        <div class="label">Загрузить план</div>
+        <div class="label">Опции</div>
       </div>
 
+
+
+      <div id="btn-build-mode" class="button with-sub" data-button="build">
+        <div class="icon">
+          <svg>
+            <use href="./planner/assets/sprite.svg#ui-wall"></use>
+          </svg>
+        </div>
+        <div class="label">Строительство</div>
+      </div>
+
+      <div id="btn-undo" class="button" data-button="undo">
+        <div class="icon">
+          <svg>
+            <use href="./planner/assets/sprite.svg#ui-undo"></use>
+          </svg>
+        </div>
+        <div class="label">Undo</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-ui app-ui-right">
+    <div class="main">
+      <div id="zoom-in" class="button" data-button="zoom-in">
+        <div class="icon">
+          <svg>
+            <use href="./planner/assets/sprite.svg#ui-zoom-in"></use>
+          </svg>
+        </div>
+      </div>
+
+      <div id="btn-center" class="button" data-button="zoom-centred">
+        <div class="icon">
+          <svg>
+            <use href="./planner/assets/sprite.svg#ui-zoom-centred"></use>
+          </svg>
+        </div>
+      </div>
+
+      <div id="zoom-out" class="button" data-button="zoom-out">
+        <div class="icon">
+          <svg>
+            <use href="./planner/assets/sprite.svg#ui-zoom-out"></use>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="submenu-build" class="sub-menu" data-parent-button="build">
+    <div class="main">
       <div id="tool-capital" class="button">
         <div class="icon">
           <svg>
@@ -79,45 +131,27 @@
         </div>
         <div class="label">Стояк V</div>
       </div>
-
-      <div id="btn-undo" class="button">
-        <div class="icon">
-          <svg>
-            <use href="./planner/assets/sprite.svg#ui-undo"></use>
-          </svg>
-        </div>
-        <div class="label">Undo</div>
-      </div>
-
-      <div id="btn-clear" class="button">
-        <div class="icon">
-          <svg>
-            <use href="./planner/assets/sprite.svg#ui-trash"></use>
-          </svg>
-        </div>
-        <div class="label">Очистить</div>
-      </div>
-
-      <div id="btn-save-json" class="button">
-        <div class="icon">
-          <svg>
-            <use href="./planner/assets/sprite.svg#ui-menu"></use>
-          </svg>
-        </div>
-        <div class="label">Сохранить JSON</div>
-      </div>
     </div>
   </div>
 
-  <div class="app-ui app-ui-right">
-    <div class="main">
-      <div id="btn-center" class="button">
-        <div class="icon">
-          <svg>
-            <use href="./planner/assets/sprite.svg#ui-zoom-centred"></use>
-          </svg>
+  <div id="submenu-options" class="sub-menu grouped" data-parent-button="menu">
+    <div class="group">
+      <div class="group-label">Опции</div>
+      <div class="group-items">
+        <div id="btn-load-image" data-button="load-image">
+          <div class="label">Загрузить план</div>
+          <div class="size"></div>
         </div>
-        <div class="label">Центровать</div>
+
+        <div id="btn-save-json" data-button="save-json">
+          <div class="label">Сохранить JSON</div>
+          <div class="size"></div>
+        </div>
+
+        <div id="btn-clear" data-button="clear-template">
+          <div class="label">Очистить</div>
+          <div class="size"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -125,6 +159,7 @@
   <div id="status" class="status"></div>
   <div id="hint" class="hint"></div>
 
+ 
   <script type="module">
     import { DrawTemplate } from "./planner/draw-app.js";
 
@@ -137,13 +172,6 @@
           wall: {
             capital: "#2a4f3d"
           }
-        },
-        windows: {
-          defaultW: 120,
-          balconyW: 200
-        },
-        doors: {
-          defaultEntryW: 100
         }
       }
     });
