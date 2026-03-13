@@ -47,7 +47,115 @@ export const DrawTemplate = {
         const CAPITAL_PICK_WALL_PX = 18
         const CAPITAL_PICK_HANDLE_PX = 16
 
+        function findFurnitureIdFromEventTarget(target) {
+            let el = target
+            while (el && el !== draw.node) {
+                if (el.getAttribute) {
+                    const id = el.getAttribute('data-furniture-id')
+                    if (id) return id
+                }
+                el = el.parentNode
+            }
+            return null
+        }
+
+        function getFurnitureById(id) {
+            return (state.furniture || []).find(f => f.id === id) || null
+        }
+
+        function isDraggableTemplateFurniture(f) {
+            return !!f && (f.typeId === 'stoyak' || f.typeId === 'stoyak-vertical')
+        }
+
+        function startFurnitureDrag(furnitureId, mouseWorld) {
+            const f = getFurnitureById(furnitureId)
+            if (!isDraggableTemplateFurniture(f)) return
+
+            historyBegin('move-riser')
+
+            furnitureEdit = {
+                id: furnitureId,
+                startMouse: { ...mouseWorld },
+                startX: f.x,
+                startY: f.y,
+            }
+        }
+
+        function applyFurnitureDrag(mouseWorld) {
+            if (!furnitureEdit) return
+
+            const f = getFurnitureById(furnitureEdit.id)
+            if (!isDraggableTemplateFurniture(f)) return
+
+            const dx = mouseWorld.x - furnitureEdit.startMouse.x
+            const dy = mouseWorld.y - furnitureEdit.startMouse.y
+
+            f.x = furnitureEdit.startX + dx
+            f.y = furnitureEdit.startY + dy
+        }
+
+        function stopFurnitureDrag() {
+            if (!furnitureEdit) return
+            furnitureEdit = null
+            historyEnd()
+        }
+
+        function findWindowIdFromEventTarget(target) {
+            let el = target
+            while (el && el !== draw.node) {
+                if (el.getAttribute) {
+                    const id = el.getAttribute('data-window-id')
+                    if (id) return id
+                }
+                el = el.parentNode
+            }
+            return null
+        }
+
+        function isDraggableTemplateWindow(win) {
+            return !!win && (win.kind === 'balcony' || win.kind === 'std')
+        }
+
+        function getWindowById(id) {
+            return (state.windows || []).find(w => w.id === id) || null
+        }
+
+        function startWindowDrag(windowId) {
+            const win = getWindowById(windowId)
+            if (!isDraggableTemplateWindow(win)) return
+
+            const wall = (state.walls || []).find(w => w.id === win.wallId)
+            if (!wall || wall.kind !== 'capital') return
+
+            historyBegin('move-window')
+
+            windowEdit = {
+                id: windowId,
+                wallId: wall.id,
+            }
+        }
+
+        function applyWindowDrag(mouseWorld) {
+            if (!windowEdit) return
+
+            const win = getWindowById(windowEdit.id)
+            if (!isDraggableTemplateWindow(win)) return
+
+            const wall = (state.walls || []).find(w => w.id === win.wallId)
+            if (!wall || wall.kind !== 'capital') return
+
+            const pr = projectPointToSegmentClamped(mouseWorld, wall.a, wall.b)
+            win.t = clampOpeningTToWall(pr.t, win.w, wall)
+        }
+        function stopWindowDrag() {
+            if (!windowEdit) return
+            windowEdit = null
+            historyEnd()
+        }
+
         let capitalEdit = null
+        let windowEdit = null
+        let furnitureEdit = null
 
         const RISER_H = {
             typeId: 'stoyak',
@@ -87,6 +195,8 @@ export const DrawTemplate = {
 
 
 
+
+
         btnCapital?.addEventListener('click', () => setTool('capital'))
         btnWindow?.addEventListener('click', () => setTool('window'))
         btnBalcony?.addEventListener('click', () => setTool('balcony'))
@@ -117,8 +227,34 @@ export const DrawTemplate = {
             }
         })
 
+        btnBuildMode?.addEventListener('click', () => {
+            if (editorMode === 'build') {
+                exitBuildMode()
+                return
+            }
+
+            editorMode = 'build'
+            currentTool = null
+            cancelCapitalDraft()
+
+            syncUI()
+            rerender()
+        })
+
         draw.node.addEventListener('pointermove', (e) => {
             const raw = screenToWorld(draw, e.clientX, e.clientY)
+
+            if (editorMode !== 'build' && furnitureEdit) {
+                applyFurnitureDrag(raw)
+                rerender()
+                return
+            }
+
+            if (editorMode !== 'build' && windowEdit) {
+                applyWindowDrag(raw)
+                rerender()
+                return
+            }
 
             if (editorMode !== 'build' && capitalEdit) {
                 applyCapitalEdit(raw)
@@ -151,12 +287,45 @@ export const DrawTemplate = {
             if (e.button !== 0 && e.pointerType === 'mouse') return
 
             const raw = screenToWorld(draw, e.clientX, e.clientY)
-
-            // обычное состояние: редактирование capital
             if (editorMode !== 'build') {
+                const furnitureId = findFurnitureIdFromEventTarget(e.target)
+                if (furnitureId) {
+                    const f = getFurnitureById(furnitureId)
+
+                    state.selectedFurnitureId = furnitureId
+                    state.selectedWallId = null
+                    state.selectedWindowId = null
+
+                    if (isDraggableTemplateFurniture(f)) {
+                        startFurnitureDrag(furnitureId, raw)
+                    }
+
+                    rerender()
+                    return
+                }
+
+                const windowId = findWindowIdFromEventTarget(e.target)
+                if (windowId) {
+                    const win = getWindowById(windowId)
+
+                    state.selectedWindowId = windowId
+                    state.selectedFurnitureId = null
+                    state.selectedWallId = null
+
+                    if (isDraggableTemplateWindow(win)) {
+                        startWindowDrag(windowId)
+                    }
+
+                    rerender()
+                    return
+                }
+
                 const handleHit = pickCapitalHandleAt(raw)
                 if (handleHit) {
                     state.selectedWallId = handleHit.id
+                    state.selectedWindowId = null
+                    state.selectedFurnitureId = null
+
                     startCapitalEdit(handleHit.handle, handleHit.id, raw)
                     rerender()
                     return
@@ -165,12 +334,17 @@ export const DrawTemplate = {
                 const wallHit = pickCapitalWallAt(raw)
                 if (wallHit) {
                     state.selectedWallId = wallHit
+                    state.selectedWindowId = null
+                    state.selectedFurnitureId = null
+
                     startCapitalEdit('move', wallHit, raw)
                     rerender()
                     return
                 }
 
                 state.selectedWallId = null
+                state.selectedWindowId = null
+                state.selectedFurnitureId = null
                 rerender()
                 return
             }
@@ -212,6 +386,19 @@ export const DrawTemplate = {
 
         draw.node.addEventListener('pointerup', () => {
             if (editorMode === 'build') return
+
+            if (furnitureEdit) {
+                stopFurnitureDrag()
+                rerender()
+                return
+            }
+
+            if (windowEdit) {
+                stopWindowDrag()
+                rerender()
+                return
+            }
+
             if (!capitalEdit) return
             stopCapitalEdit()
             rerender()
@@ -219,6 +406,19 @@ export const DrawTemplate = {
 
         draw.node.addEventListener('pointercancel', () => {
             if (editorMode === 'build') return
+
+            if (furnitureEdit) {
+                stopFurnitureDrag()
+                rerender()
+                return
+            }
+
+            if (windowEdit) {
+                stopWindowDrag()
+                rerender()
+                return
+            }
+
             if (!capitalEdit) return
             stopCapitalEdit()
             rerender()
@@ -613,7 +813,11 @@ export const DrawTemplate = {
 
             state.previewWall = null
             state.previewDoor = null
+
             state.previewFurniture = null
+
+            state.selectedWindowId = null
+            state.hoverWindowId = null
 
             state.view = { scale: 1, offsetX: 0, offsetY: 0 }
             state.ui = { dragged: false, lockPan: false, snapPulse: null }
@@ -634,7 +838,13 @@ export const DrawTemplate = {
 
             capitalStart = null
             capitalEdit = null
+            windowEdit = null
+            furnitureEdit = null
+
             state.selectedWallId = null
+            state.selectedWindowId = null
+            state.selectedFurnitureId = null
+            state.selectedDoorId = null
             state.previewWall = null
             state.mode = 'idle'
 
@@ -922,7 +1132,12 @@ export const DrawTemplate = {
             state.furniture = []
 
             capitalEdit = null
+            windowEdit = null
+            furnitureEdit = null
+
             state.selectedWallId = null
+            state.selectedWindowId = null
+            state.selectedFurnitureId = null
 
             cancelCapitalDraft()
             rerender()

@@ -418,6 +418,8 @@ export function render(draw) {
   const windows = state.windows || []
   if (windows.length) {
     const capCentroid = getCapitalsCentroid(walls)
+    const canEditDrawWindows = state.editorType === 'draw-template'
+
     for (const win of windows) {
       const wall = caps.find(x => x.id === win.wallId)
       if (!wall) continue
@@ -441,37 +443,27 @@ export function render(draw) {
       const p1 = { x: cx - ux * half, y: cy - uy * half }
       const p2 = { x: cx + ux * half, y: cy + uy * half }
 
-      // нормаль "наружу" (как и было)
       const { nx, ny } = outwardNormal(a, b, capCentroid)
 
-      // ✅ хотим, чтобы окно ровно совпадало по толщине с CAP_W
-
-
-      // ✅ если thick == CAP_W, то окно должно сидеть по центру стены => смещение 0
-      // (если хочешь лёгкий вынос — ставь 1..2, но тогда оно будет торчать наружу)
       const out = (win.out ?? 0)
-
       const q1 = { x: p1.x + nx * out, y: p1.y + ny * out }
       const q2 = { x: p2.x + nx * out, y: p2.y + ny * out }
 
       const thick = (win.thick ?? config.walls.CAP_W)
 
-      // --- SVG symbol вместо линии ---
-      // обычное окно или балкон (если ты так помечаешь)
       const symbolId =
         (win.kind === 'balcony' || win.type === 'balcony')
           ? 'furniture-balcony'
           : 'furniture-window'
 
       const sym = draw.defs().findOne(`#${symbolId}`)
+
+      // важно: объявляем ДО if(sym), чтобы потом использовать в selection/hit
+      const ang = angleDeg(a, b)
+      const mx = (q1.x + q2.x) / 2
+      const my = (q1.y + q2.y) / 2
+
       if (sym) {
-        const ang = angleDeg(a, b)
-
-        // центр окна с выносом наружу
-        const mx = (q1.x + q2.x) / 2
-        const my = (q1.y + q2.y) / 2
-
-        // длина = winW (см), толщина = thick (см)
         overlayG
           .use(sym)
           .size(winW, thick)
@@ -479,11 +471,9 @@ export function render(draw) {
           .rotate(ang, mx, my)
           .attr({
             'pointer-events': 'none',
-            // currentColor внутри символа возьмётся отсюда:
             color: config.theme.window.stroke,
           })
       } else {
-        // fallback: если symbol не найден — рисуем как раньше линией
         overlayG
           .line(q1.x, q1.y, q2.x, q2.y)
           .stroke({
@@ -494,6 +484,37 @@ export function render(draw) {
             opacity: 1,
           })
           .attr({ 'pointer-events': 'none' })
+      }
+
+      // ---- draw-template: selection + hit area for windows/balcony ----
+      if (canEditDrawWindows) {
+        const isWindowSelected = win.id && win.id === state.selectedWindowId
+
+        overlayG
+          .line(q1.x, q1.y, q2.x, q2.y)
+          .stroke({
+            width: Math.max((config.snap?.pick?.windowPx ?? 18) * invScale, thick),
+            color: '#000',
+            opacity: 0,
+            linecap: 'butt',
+          })
+          .attr({
+            'pointer-events': 'stroke',
+            'data-window-id': win.id,
+          })
+
+        if (isWindowSelected) {
+          drawDashedBox(overlayG, {
+            cx: mx,
+            cy: my,
+            w: winW,
+            h: thick,
+            angDeg: ang,
+            invScale,
+            color: config.theme.wall.selected,
+            opacity: 0.95,
+          })
+        }
       }
     }
   }
@@ -921,43 +942,43 @@ export function render(draw) {
     })
   }
 
-// 4) selected wall highlight + handles (walls)
-if (state.selectedWallId) {
-  const w = walls.find(x => x.id === state.selectedWallId)
-  if (w) {
-    const isCapitalSelected = w.kind === 'capital' && state.editorType === 'draw-template'
-    const baseW = isCapitalSelected ? config.walls.CAP_W : config.walls.NOR_W
-    const linecap = isCapitalSelected ? 'square' : 'butt'
+  // 4) selected wall highlight + handles (walls)
+  if (state.selectedWallId) {
+    const w = walls.find(x => x.id === state.selectedWallId)
+    if (w) {
+      const isCapitalSelected = w.kind === 'capital' && state.editorType === 'draw-template'
+      const baseW = isCapitalSelected ? config.walls.CAP_W : config.walls.NOR_W
+      const linecap = isCapitalSelected ? 'square' : 'butt'
 
-    wallsG
-      .line(w.a.x, w.a.y, w.b.x, w.b.y)
-      .stroke({
-        width: baseW + 6,
-        color: config.theme.wall.selected,
-        opacity: 0.35,
-        linecap,
-        linejoin: 'round',
-      })
-      .attr({ 'pointer-events': 'none' })
+      wallsG
+        .line(w.a.x, w.a.y, w.b.x, w.b.y)
+        .stroke({
+          width: baseW + 6,
+          color: config.theme.wall.selected,
+          opacity: 0.35,
+          linecap,
+          linejoin: 'round',
+        })
+        .attr({ 'pointer-events': 'none' })
 
-    const r = config.render?.handles?.r ?? 8
-    const handleStrokeW = config.render?.handles?.strokeW ?? 3
+      const r = config.render?.handles?.r ?? 8
+      const handleStrokeW = config.render?.handles?.strokeW ?? 3
 
-    wallsG
-      .circle(r * 2)
-      .center(w.a.x, w.a.y)
-      .fill('#fff')
-      .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
-      .attr({ 'pointer-events': 'none' })
+      wallsG
+        .circle(r * 2)
+        .center(w.a.x, w.a.y)
+        .fill('#fff')
+        .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
+        .attr({ 'pointer-events': 'none' })
 
-    wallsG
-      .circle(r * 2)
-      .center(w.b.x, w.b.y)
-      .fill('#fff')
-      .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
-      .attr({ 'pointer-events': 'none' })
+      wallsG
+        .circle(r * 2)
+        .center(w.b.x, w.b.y)
+        .fill('#fff')
+        .stroke({ width: handleStrokeW, color: config.theme.wall.selected })
+        .attr({ 'pointer-events': 'none' })
+    }
   }
-}
 
   // ---------- SNAP PULSE ----------
   {
