@@ -24,8 +24,7 @@ export const DrawTemplate = {
         const btnUndo = document.getElementById('btn-undo')
         const btnCenter = document.getElementById('btn-center')
 
-        const btnBuildMode = document.getElementById('btn-build-mode')
-        const submenuBuild = document.getElementById('submenu-build')
+
 
         const btnCapital = document.getElementById('tool-capital')
         const btnWindow = document.getElementById('tool-window')
@@ -33,7 +32,7 @@ export const DrawTemplate = {
         const btnEntryDoor = document.getElementById('tool-entry-door')
         const btnRiserH = document.getElementById('tool-riser-h')
         const btnRiserV = document.getElementById('tool-riser-v')
-
+        const btnBuildMode = document.getElementById('btn-build-mode')
 
         const status = document.getElementById('status')
         const hint = document.getElementById('hint')
@@ -75,19 +74,6 @@ export const DrawTemplate = {
         syncUI()
         rerender()
 
-        btnBuildMode?.addEventListener('click', () => {
-            if (editorMode === 'build') {
-                exitBuildMode()
-                return
-            }
-
-            editorMode = 'build'
-            currentTool = null
-            cancelCapitalDraft()
-
-            syncUI()
-            rerender()
-        })
 
         btnLoadImage?.addEventListener('click', () => imageInput?.click())
         imageInput?.addEventListener('change', onImageSelected)
@@ -388,7 +374,7 @@ export const DrawTemplate = {
                     y: capitalEdit.startA.y + dy,
                 }
 
-                newA = snapCapitalDraftPoint(moved, fixed, capitalEdit.startA)
+                newA = orthogonalPoint(fixed, moved).point
                 newB = { ...fixed }
             }
 
@@ -399,7 +385,7 @@ export const DrawTemplate = {
                     y: capitalEdit.startB.y + dy,
                 }
 
-                newB = snapCapitalDraftPoint(moved, fixed, capitalEdit.startB)
+                newB = orthogonalPoint(fixed, moved).point
                 newA = { ...fixed }
             }
 
@@ -646,7 +632,7 @@ export const DrawTemplate = {
             editorMode = 'idle'
             currentTool = null
 
-            cancelCapitalDraft()
+            capitalStart = null
             capitalEdit = null
             state.selectedWallId = null
             state.previewWall = null
@@ -657,20 +643,30 @@ export const DrawTemplate = {
         }
 
         function setTool(tool) {
+            // повторный клик по "Капиталка" выключает режим рисования
+            if (tool === 'capital' && editorMode === 'build' && currentTool === 'capital') {
+                exitBuildMode()
+                return
+            }
+
             currentTool = tool
             editorMode = 'build'
             cancelCapitalDraft()
 
+            if (tool === 'capital') {
+                state.mode = 'draw-wall'
+            } else {
+                state.mode = 'idle'
+            }
+
             syncUI()
             rerender()
         }
+
         function syncUI() {
             const isBuild = editorMode === 'build'
 
             btnBuildMode?.classList.toggle('is-active', isBuild)
-
-            // Если в твоём CSS не is-open, а другой класс — замени только его имя
-            submenuBuild?.classList.toggle('is-open', isBuild)
 
             btnCapital?.classList.toggle('is-active', isBuild && currentTool === 'capital')
             btnWindow?.classList.toggle('is-active', isBuild && currentTool === 'window')
@@ -712,6 +708,7 @@ export const DrawTemplate = {
                     hint.textContent = ''
             }
         }
+
         function rerender() {
             render(draw)
             updateStatus()
@@ -734,7 +731,12 @@ export const DrawTemplate = {
             capitalStart = null
             capitalEdit = null
             state.previewWall = null
-            state.mode = 'idle'
+
+            if (editorMode === 'build' && currentTool === 'capital') {
+                state.mode = 'draw-wall'
+            } else {
+                state.mode = 'idle'
+            }
         }
 
         function handleCapitalTool(p) {
@@ -1030,5 +1032,6 @@ export const DrawTemplate = {
 
             URL.revokeObjectURL(url)
         }
+        window.state = state
     }
 }
