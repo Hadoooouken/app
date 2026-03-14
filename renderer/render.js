@@ -755,7 +755,11 @@ export function render(draw) {
     }
 
     // hit only for interior
-    if (d.kind === 'interior' && !d.locked) {
+    const canHitDoor =
+      (d.kind === 'interior' && !d.locked) ||
+      (state.editorType === 'draw-template' && d.kind === 'entry')
+
+    if (canHitDoor) {
       overlayG
         .line(p1.x, p1.y, p2.x, p2.y)
         .stroke({ width: hitDoorW, color: '#000', opacity: 0 })

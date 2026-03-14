@@ -33,6 +33,7 @@ export const DrawTemplate = {
         const btnRiserH = document.getElementById('tool-riser-h')
         const btnRiserV = document.getElementById('tool-riser-v')
         const btnBuildMode = document.getElementById('btn-build-mode')
+        const btnTrash = document.getElementById('btn-trash')
 
         const status = document.getElementById('status')
         const hint = document.getElementById('hint')
@@ -112,14 +113,8 @@ export const DrawTemplate = {
             return null
         }
 
-        function isDraggableTemplateWindow(win) {
-            return !!win && (win.kind === 'balcony' || win.kind === 'std')
-        }
-
-        function getWindowById(id) {
-            return (state.windows || []).find(w => w.id === id) || null
-        }
-
+       
+       
         function findWindowHandleFromEventTarget(target) {
             let el = target
             while (el && el !== draw.node) {
@@ -215,9 +210,64 @@ export const DrawTemplate = {
             historyEnd()
         }
 
+        function findDoorIdFromEventTarget(target) {
+            let el = target
+            while (el && el !== draw.node) {
+                if (el.getAttribute) {
+                    const id = el.getAttribute('data-door-id')
+                    if (id) return id
+                }
+                el = el.parentNode
+            }
+            return null
+        }
+
+        function getDoorById(id) {
+            return (state.doors || []).find(d => d.id === id) || null
+        }
+
+        function isDraggableTemplateDoor(d) {
+            return !!d && d.kind === 'entry'
+        }
+
+        function startDoorDrag(doorId) {
+            const d = getDoorById(doorId)
+            if (!isDraggableTemplateDoor(d)) return
+
+            const wall = (state.walls || []).find(w => w.id === d.wallId)
+            if (!wall || wall.kind !== 'capital') return
+
+            historyBegin('move-entry-door')
+
+            doorEdit = {
+                id: doorId,
+                wallId: wall.id,
+            }
+        }
+
+        function applyDoorDrag(mouseWorld) {
+            if (!doorEdit) return
+
+            const d = getDoorById(doorEdit.id)
+            if (!isDraggableTemplateDoor(d)) return
+
+            const wall = (state.walls || []).find(w => w.id === d.wallId)
+            if (!wall || wall.kind !== 'capital') return
+
+            const pr = projectPointToSegmentClamped(mouseWorld, wall.a, wall.b)
+            d.t = clampOpeningTToWall(pr.t, d.w, wall)
+        }
+
+        function stopDoorDrag() {
+            if (!doorEdit) return
+            doorEdit = null
+            historyEnd()
+        }
+
         let capitalEdit = null
         let windowEdit = null
         let furnitureEdit = null
+        let doorEdit = null
 
         const RISER_H = {
             typeId: 'stoyak',
@@ -244,7 +294,7 @@ export const DrawTemplate = {
         syncUI()
         rerender()
 
-
+        btnTrash?.addEventListener('click', deleteSelectedElement)
         btnLoadImage?.addEventListener('click', () => imageInput?.click())
         imageInput?.addEventListener('change', onImageSelected)
         btnSaveJson?.addEventListener('click', saveJsonToFile)
@@ -303,6 +353,15 @@ export const DrawTemplate = {
             rerender()
         })
 
+        window.addEventListener('keydown', (e) => {
+            if (e.key !== 'Delete' && e.key !== 'Backspace') return
+
+            const tag = document.activeElement?.tagName?.toLowerCase()
+            if (tag === 'input' || tag === 'textarea') return
+
+            deleteSelectedElement()
+        })
+
         draw.node.addEventListener('pointermove', (e) => {
             const raw = screenToWorld(draw, e.clientX, e.clientY)
 
@@ -314,6 +373,12 @@ export const DrawTemplate = {
 
             if (editorMode !== 'build' && windowEdit) {
                 applyWindowEdit(raw)
+                rerender()
+                return
+            }
+
+            if (editorMode !== 'build' && doorEdit) {
+                applyDoorDrag(raw)
                 rerender()
                 return
             }
@@ -357,6 +422,7 @@ export const DrawTemplate = {
                     state.selectedFurnitureId = furnitureId
                     state.selectedWallId = null
                     state.selectedWindowId = null
+                    state.selectedDoorId = null
 
                     if (isDraggableTemplateFurniture(f)) {
                         startFurnitureDrag(furnitureId, raw)
@@ -371,6 +437,7 @@ export const DrawTemplate = {
                     state.selectedWindowId = windowHandleHit.id
                     state.selectedFurnitureId = null
                     state.selectedWallId = null
+                    state.selectedDoorId = null
 
                     startWindowEdit(windowHandleHit.id, windowHandleHit.handle, raw)
                     rerender()
@@ -382,6 +449,7 @@ export const DrawTemplate = {
                     state.selectedWindowId = windowId
                     state.selectedFurnitureId = null
                     state.selectedWallId = null
+                    state.selectedDoorId = null
 
                     startWindowEdit(windowId, 'move', raw)
                     rerender()
@@ -393,8 +461,26 @@ export const DrawTemplate = {
                     state.selectedWallId = handleHit.id
                     state.selectedWindowId = null
                     state.selectedFurnitureId = null
+                    state.selectedDoorId = null
 
                     startCapitalEdit(handleHit.handle, handleHit.id, raw)
+                    rerender()
+                    return
+                }
+
+                const doorId = findDoorIdFromEventTarget(e.target)
+                if (doorId) {
+                    const d = getDoorById(doorId)
+
+                    state.selectedDoorId = doorId
+                    state.selectedWallId = null
+                    state.selectedWindowId = null
+                    state.selectedFurnitureId = null
+
+                    if (isDraggableTemplateDoor(d)) {
+                        startDoorDrag(doorId)
+                    }
+
                     rerender()
                     return
                 }
@@ -404,6 +490,7 @@ export const DrawTemplate = {
                     state.selectedWallId = wallHit
                     state.selectedWindowId = null
                     state.selectedFurnitureId = null
+                    state.selectedDoorId = null
 
                     startCapitalEdit('move', wallHit, raw)
                     rerender()
@@ -413,6 +500,7 @@ export const DrawTemplate = {
                 state.selectedWallId = null
                 state.selectedWindowId = null
                 state.selectedFurnitureId = null
+                state.selectedDoorId = null
                 rerender()
                 return
             }
@@ -467,6 +555,12 @@ export const DrawTemplate = {
                 return
             }
 
+            if (doorEdit) {
+                stopDoorDrag()
+                rerender()
+                return
+            }
+
             if (!capitalEdit) return
             stopCapitalEdit()
             rerender()
@@ -483,6 +577,12 @@ export const DrawTemplate = {
 
             if (windowEdit) {
                 stopWindowEdit()
+                rerender()
+                return
+            }
+
+            if (doorEdit) {
+                stopDoorDrag()
                 rerender()
                 return
             }
@@ -908,6 +1008,7 @@ export const DrawTemplate = {
             capitalEdit = null
             windowEdit = null
             furnitureEdit = null
+            doorEdit = null
 
             state.selectedWallId = null
             state.selectedWindowId = null
@@ -990,6 +1091,109 @@ export const DrawTemplate = {
         function rerender() {
             render(draw)
             updateStatus()
+            updateDeleteButtonState()
+        }
+
+        function updateDeleteButtonState() {
+            if (!btnTrash) return
+
+            let canDelete = false
+
+            if (editorMode === 'build') {
+                canDelete = false
+            } else if (state.selectedFurnitureId) {
+                const f = getFurnitureById(state.selectedFurnitureId)
+                canDelete = !!f && isDraggableTemplateFurniture(f)
+            } else if (state.selectedWindowId) {
+                const w = getWindowById(state.selectedWindowId)
+                canDelete = !!w
+            }      else if (state.selectedDoorId) {
+                const d = getDoorById(state.selectedDoorId)
+                canDelete = !!d && isDraggableTemplateDoor(d)
+            }else if (state.selectedWallId) {
+                const wall = getCapitalById(state.selectedWallId)
+                canDelete = !!wall
+            }
+       
+
+            btnTrash.classList.toggle('inactive', !canDelete)
+            btnTrash.classList.toggle('active', canDelete)
+        }
+
+        function deleteSelectedElement() {
+            if (editorMode === 'build') return
+
+            // 1) мебель
+            if (state.selectedFurnitureId) {
+                const id = state.selectedFurnitureId
+                const f = getFurnitureById(id)
+                if (!f || !isDraggableTemplateFurniture(f)) return
+
+                const idx = (state.furniture || []).findIndex(x => x.id === id)
+                if (idx === -1) return
+
+                historyCommit('delete-riser')
+                state.furniture.splice(idx, 1)
+
+                state.selectedFurnitureId = null
+                rerender()
+                return
+            }
+
+            // 2) окно
+            if (state.selectedWindowId) {
+                const id = state.selectedWindowId
+                const w = getWindowById(id)
+                if (!w) return
+
+                const idx = (state.windows || []).findIndex(x => x.id === id)
+                if (idx === -1) return
+
+                historyCommit('delete-window')
+                state.windows.splice(idx, 1)
+
+                state.selectedWindowId = null
+                rerender()
+                return
+            }
+
+            if (state.selectedDoorId) {
+                const id = state.selectedDoorId
+                const d = getDoorById(id)
+                if (!d || !isDraggableTemplateDoor(d)) return
+
+                const idx = (state.doors || []).findIndex(x => x.id === id)
+                if (idx === -1) return
+
+                historyCommit('delete-entry-door')
+                state.doors.splice(idx, 1)
+
+                state.selectedDoorId = null
+                rerender()
+                return
+            }
+
+            // 3) capital wall
+            if (state.selectedWallId) {
+                const wallId = state.selectedWallId
+                const idx = (state.walls || []).findIndex(x => x.id === wallId)
+                if (idx === -1) return
+
+                const wall = state.walls[idx]
+                if (!wall || wall.kind !== 'capital') return
+
+                historyCommit('delete-capital-wall')
+
+                state.walls.splice(idx, 1)
+
+                // удалить привязанные окна/двери
+                state.windows = (state.windows || []).filter(x => x.wallId !== wallId)
+                state.doors = (state.doors || []).filter(x => x.wallId !== wallId)
+
+                state.selectedWallId = null
+                ensureCapitalInnerFaces()
+                rerender()
+            }
         }
 
         function updateStatus() {
@@ -1202,15 +1406,23 @@ export const DrawTemplate = {
             capitalEdit = null
             windowEdit = null
             furnitureEdit = null
+            doorEdit = null
+
+            
 
             state.selectedWallId = null
             state.selectedWindowId = null
             state.selectedFurnitureId = null
+            state.selectedDoorId = null
+
+            state.hoverWallId = null
+state.hoverWindowId = null
+state.hoverDoorId = null
+state.hoverFurnitureId = null
 
             cancelCapitalDraft()
             rerender()
         }
-
         function centerScene() {
             if ((state.walls || []).length) {
                 fitToWalls(draw, { padding: 120, maxScale: 2 })
