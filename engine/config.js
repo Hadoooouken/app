@@ -269,6 +269,8 @@ export const config = {
             // Дополнительная толщина normal стены при hover/selected (world units)
             hoverExtraW: 2,
             selectedExtraW: 4,
+            capital: "#2a4f3d",
+            capitalTemplateOpacity: 0.7
         },
 
         door: {
@@ -325,8 +327,8 @@ export const config = {
         },
         canvas: { bg: '#F2EEE5' },
     },
-    
-    override: function(settings) {
+
+    override: function (settings) {
         if (!settings || typeof settings !== 'object') {
             return;
         }
