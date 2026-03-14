@@ -63,6 +63,66 @@ export const DrawTemplate = {
             return null
         }
 
+        function findFurnitureRotateIdFromEventTarget(target) {
+            let el = target
+            while (el && el !== draw.node) {
+                if (el.getAttribute) {
+                    const id = el.getAttribute('data-furniture-rotate')
+                    if (id) return id
+                }
+                el = el.parentNode
+            }
+            return null
+        }
+
+        function rotateTemplateRiserQuarterTurn(furnitureId) {
+            const f = getFurnitureById(furnitureId)
+            if (!isDraggableTemplateFurniture(f)) return
+
+            historyCommit('rotate-riser')
+
+            const curr = ((f.rot || 0) % 360 + 360) % 360
+            let nextStep = 0
+
+            // 4 состояния:
+            // 0   -> horizontal 0
+            // 1   -> vertical 0
+            // 2   -> horizontal 180
+            // 3   -> vertical 180
+            if (f.typeId === 'stoyak' && curr === 0) nextStep = 1
+            else if (f.typeId === 'stoyak-vertical' && curr === 0) nextStep = 2
+            else if (f.typeId === 'stoyak' && curr === 180) nextStep = 3
+            else nextStep = 0
+
+            if (nextStep === 0) {
+                f.typeId = 'stoyak'
+                f.symbolId = 'mebel-stoyak'
+                f.w = 50
+                f.h = 28
+                f.rot = 0
+            } else if (nextStep === 1) {
+                f.typeId = 'stoyak-vertical'
+                f.symbolId = 'mebel-stoyak-vertical'
+                f.w = 28
+                f.h = 50
+                f.rot = 0
+            } else if (nextStep === 2) {
+                f.typeId = 'stoyak'
+                f.symbolId = 'mebel-stoyak'
+                f.w = 50
+                f.h = 28
+                f.rot = 180
+            } else {
+                f.typeId = 'stoyak-vertical'
+                f.symbolId = 'mebel-stoyak-vertical'
+                f.w = 28
+                f.h = 50
+                f.rot = 180
+            }
+
+            rerender()
+        }
+
         function getFurnitureById(id) {
             return (state.furniture || []).find(f => f.id === id) || null
         }
@@ -115,8 +175,6 @@ export const DrawTemplate = {
             }
             return null
         }
-
-
 
         function findWindowHandleFromEventTarget(target) {
             let el = target
@@ -438,6 +496,20 @@ export const DrawTemplate = {
 
             const raw = screenToWorld(draw, e.clientX, e.clientY)
             if (editorMode !== 'build') {
+                const rotateFurnitureId = findFurnitureRotateIdFromEventTarget(e.target)
+                if (rotateFurnitureId) {
+                    const f = getFurnitureById(rotateFurnitureId)
+                    if (isDraggableTemplateFurniture(f)) {
+                        state.selectedFurnitureId = rotateFurnitureId
+                        state.selectedWallId = null
+                        state.selectedWindowId = null
+                        state.selectedDoorId = null
+
+                        rotateTemplateRiserQuarterTurn(rotateFurnitureId)
+                        return
+                    }
+                }
+
                 const furnitureId = findFurnitureIdFromEventTarget(e.target)
                 if (furnitureId) {
                     const f = getFurnitureById(furnitureId)
