@@ -167,17 +167,21 @@ function polylabel(poly, precision = 1.0) {
 // 1) берем исходные сегменты
 function collectRawSegments() {
     const segs = []
+
     for (const w of (state.walls || [])) {
         if (!w) continue
+
         if (w.kind === 'capital') {
-            segs.push({ a: { ...w.a }, b: { ...w.b }, kind: 'capital' })
+            const a = w.ia || w.a
+            const b = w.ib || w.b
+            segs.push({ a: { ...a }, b: { ...b }, kind: 'capital' })
         } else {
-            // для топологии лучше брать "строительные" точки, если есть
             const a = w.va || w.a
             const b = w.vb || w.b
             segs.push({ a: { ...a }, b: { ...b }, kind: 'normal' })
         }
     }
+
     return segs
 }
 
