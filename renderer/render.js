@@ -1063,13 +1063,13 @@ export function render(draw) {
 
       // length by "construction geometry"
       let lenA, lenB
-      if (w.kind !== 'capital') {
-        lenA = w.va || w.a
-        lenB = w.vb || w.b
-      } else {
-        lenA = w.ia || w.a
-        lenB = w.ib || w.b
-      }
+if (w.kind !== 'capital') {
+  lenA = w.a
+  lenB = w.b
+} else {
+  lenA = w.ia || w.a
+  lenB = w.ib || w.b
+}
 
       const lenUnits = Math.hypot(lenB.x - lenA.x, lenB.y - lenA.y)
       const lenM = unitsToMeters(lenUnits)
