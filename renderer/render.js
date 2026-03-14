@@ -1164,33 +1164,48 @@ export function render(draw) {
     }
   }
 
-  // ---------- preview wall ----------
+ // ---------- preview wall / capital cursor ----------
+if (state.editorType === 'draw-template' && state.mode === 'draw-wall') {
+  // ДО первого клика — один квадрат-курсор размером капиталки
+  if (!state.previewWall && state.snapPoint) {
+    overlayG
+      .rect(config.walls.CAP_W, config.walls.CAP_W)
+      .center(state.snapPoint.x, state.snapPoint.y)
+      .fill({
+        color: config.theme.wall.selected,
+        opacity: 0.75,
+      })
+      .attr({ 'pointer-events': 'none' })
+  }
+
+  // ПОСЛЕ первого клика — обычное превью стены
   if (state.previewWall) {
     const { a, b, ok } = state.previewWall
 
-    if (state.editorType === 'draw-template') {
-      overlayG
-        .line(a.x, a.y, b.x, b.y)
-        .stroke({
-          width: config.walls.CAP_W,
-          color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
-          opacity: 0.75,
-          linecap: 'square',
-          linejoin: 'miter',
-        })
-        .attr({ 'pointer-events': 'none' })
-    } else {
-      overlayG
-        .line(a.x, a.y, b.x, b.y)
-        .stroke({
-          width: config.render.preview.strokeW,
-          color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
-          dasharray: '10 8',
-          linecap: 'round',
-        })
-        .attr({ 'pointer-events': 'none' })
-    }
+    overlayG
+      .line(a.x, a.y, b.x, b.y)
+      .stroke({
+        width: config.walls.CAP_W,
+        color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
+        opacity: 0.75,
+        linecap: 'square',
+        linejoin: 'miter',
+      })
+      .attr({ 'pointer-events': 'none' })
   }
+} else if (state.previewWall) {
+  const { a, b, ok } = state.previewWall
+
+  overlayG
+    .line(a.x, a.y, b.x, b.y)
+    .stroke({
+      width: config.render.preview.strokeW,
+      color: ok ? config.theme.wall.selected : config.theme.cursor.invalid,
+      dasharray: '10 8',
+      linecap: 'round',
+    })
+    .attr({ 'pointer-events': 'none' })
+}
   // ---------- CURSOR DOT ----------
   if (state.mode === 'draw-wall' && state.editorType !== 'draw-template') {
     // курсор = конец previewWall если есть, иначе snapPoint

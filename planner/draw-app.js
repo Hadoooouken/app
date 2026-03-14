@@ -1,11 +1,12 @@
 import { state, wid } from '../engine/state.js'
 import { config } from '../engine/config.js'
 import { historyCommit, undo, historyBegin, historyEnd } from '../engine/history.js'
-import { createSVG, screenToWorld } from '../renderer/svg.js'
+import { createSVG, screenToWorld, setZoomAtCenter } from '../renderer/svg.js'
 import { render, fitToWalls } from '../renderer/render.js'
 import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 import { projectPointToSegmentClamped } from '../engine/geom.js'
 import { loadFurnitureSpriteIntoDefs } from './furniture-catalog.js'
+
 
 export const DrawTemplate = {
     init: async function (options = {}) {
@@ -23,6 +24,8 @@ export const DrawTemplate = {
         const btnClear = document.getElementById('btn-clear')
         const btnUndo = document.getElementById('btn-undo')
         const btnCenter = document.getElementById('btn-center')
+        const btnZoomIn = document.getElementById('zoom-in')
+        const btnZoomOut = document.getElementById('zoom-out')
 
 
 
@@ -113,8 +116,8 @@ export const DrawTemplate = {
             return null
         }
 
-       
-       
+
+
         function findWindowHandleFromEventTarget(target) {
             let el = target
             while (el && el !== draw.node) {
@@ -305,6 +308,16 @@ export const DrawTemplate = {
         })
         btnCenter?.addEventListener('click', centerScene)
 
+        btnZoomIn?.addEventListener('click', () => {
+            setZoomAtCenter(draw, Math.min(5, state.view.scale * 1.2))
+            rerender()
+        })
+
+        btnZoomOut?.addEventListener('click', () => {
+            setZoomAtCenter(draw, Math.max(0.2, state.view.scale / 1.2))
+            rerender()
+        })
+
 
 
 
@@ -389,9 +402,18 @@ export const DrawTemplate = {
                 return
             }
 
+            // 👇 ДО первого клика по капиталке — показываем квадрат-курсор
+            if (editorMode === 'build' && currentTool === 'capital' && !capitalStart) {
+                state.mode = 'draw-wall'
+                state.snapPoint = snapCapitalStartPoint(raw)
+                rerender()
+                return
+            }
+
             if (editorMode === 'build' && currentTool === 'capital' && capitalStart) {
                 const end = snapCapitalDraftPoint(raw, capitalStart, capitalStart)
 
+                state.snapPoint = end
                 state.mode = 'draw-wall'
                 state.previewWall = {
                     a: { ...capitalStart },
@@ -403,8 +425,9 @@ export const DrawTemplate = {
                 return
             }
 
-            if (state.previewWall) {
+            if (state.previewWall || state.snapPoint) {
                 state.previewWall = null
+                state.snapPoint = null
                 if (state.mode === 'draw-wall') state.mode = 'idle'
                 rerender()
             }
@@ -1015,6 +1038,7 @@ export const DrawTemplate = {
             state.selectedFurnitureId = null
             state.selectedDoorId = null
             state.previewWall = null
+            state.snapPoint = null
             state.mode = 'idle'
 
             syncUI()
@@ -1107,14 +1131,14 @@ export const DrawTemplate = {
             } else if (state.selectedWindowId) {
                 const w = getWindowById(state.selectedWindowId)
                 canDelete = !!w
-            }      else if (state.selectedDoorId) {
+            } else if (state.selectedDoorId) {
                 const d = getDoorById(state.selectedDoorId)
                 canDelete = !!d && isDraggableTemplateDoor(d)
-            }else if (state.selectedWallId) {
+            } else if (state.selectedWallId) {
                 const wall = getCapitalById(state.selectedWallId)
                 canDelete = !!wall
             }
-       
+
 
             btnTrash.classList.toggle('inactive', !canDelete)
             btnTrash.classList.toggle('active', canDelete)
@@ -1213,6 +1237,7 @@ export const DrawTemplate = {
             capitalStart = null
             capitalEdit = null
             state.previewWall = null
+            state.snapPoint = null
 
             if (editorMode === 'build' && currentTool === 'capital') {
                 state.mode = 'draw-wall'
@@ -1408,7 +1433,7 @@ export const DrawTemplate = {
             furnitureEdit = null
             doorEdit = null
 
-            
+
 
             state.selectedWallId = null
             state.selectedWindowId = null
@@ -1416,13 +1441,14 @@ export const DrawTemplate = {
             state.selectedDoorId = null
 
             state.hoverWallId = null
-state.hoverWindowId = null
-state.hoverDoorId = null
-state.hoverFurnitureId = null
+            state.hoverWindowId = null
+            state.hoverDoorId = null
+            state.hoverFurnitureId = null
 
             cancelCapitalDraft()
             rerender()
         }
+
         function centerScene() {
             if ((state.walls || []).length) {
                 fitToWalls(draw, { padding: 120, maxScale: 2 })
@@ -1433,7 +1459,14 @@ state.hoverFurnitureId = null
             if (state.trace?.active) {
                 fitToTraceRect(state.trace.rectWorld, { padding: 80, maxScale: 2 })
                 rerender()
+                return
             }
+
+            // fallback: просто дефолтный вид
+            state.view.scale = 1
+            state.view.offsetX = 0
+            state.view.offsetY = 0
+            rerender()
         }
 
         function fitToTraceRect(rectWorld, { padding = 80, maxScale = 2, minScale = 0.1 } = {}) {
