@@ -6,6 +6,7 @@ import { render, fitToWalls } from '../renderer/render.js'
 import { ensureCapitalInnerFaces } from '../engine/capitals-inner.js'
 import { projectPointToSegmentClamped } from '../engine/geom.js'
 import { loadFurnitureSpriteIntoDefs } from './furniture-catalog.js'
+import { initViewport } from '../interaction/viewport.js'
 
 
 export const DrawTemplate = {
@@ -17,6 +18,7 @@ export const DrawTemplate = {
 
         const workspace = document.getElementById('workspace')
         const draw = createSVG(workspace)
+
 
         const imageInput = document.getElementById('image-input')
         const btnLoadImage = document.getElementById('btn-load-image')
@@ -135,6 +137,9 @@ export const DrawTemplate = {
             const f = getFurnitureById(furnitureId)
             if (!isDraggableTemplateFurniture(f)) return
 
+            state.ui ||= {}
+            state.ui.lockPan = true
+
             historyBegin('move-riser')
 
             furnitureEdit = {
@@ -161,6 +166,10 @@ export const DrawTemplate = {
         function stopFurnitureDrag() {
             if (!furnitureEdit) return
             furnitureEdit = null
+
+            state.ui ||= {}
+            state.ui.lockPan = false
+
             historyEnd()
         }
 
@@ -200,15 +209,17 @@ export const DrawTemplate = {
             const wall = (state.walls || []).find(w => w.id === win.wallId)
             if (!wall || wall.kind !== 'capital') return
 
-            // resize только для обычных окон
             if ((kind === 'start' || kind === 'end') && win.kind !== 'std') return
+
+            state.ui ||= {}
+            state.ui.lockPan = true
 
             historyBegin(kind === 'move' ? 'move-window' : 'resize-window')
 
             windowEdit = {
                 id: windowId,
                 wallId: wall.id,
-                kind, // 'move' | 'start' | 'end'
+                kind,
                 startMouse: { ...mouseWorld },
                 startT: win.t,
                 startW: win.w,
@@ -268,6 +279,10 @@ export const DrawTemplate = {
         function stopWindowEdit() {
             if (!windowEdit) return
             windowEdit = null
+
+            state.ui ||= {}
+            state.ui.lockPan = false
+
             historyEnd()
         }
 
@@ -298,6 +313,9 @@ export const DrawTemplate = {
             const wall = (state.walls || []).find(w => w.id === d.wallId)
             if (!wall || wall.kind !== 'capital') return
 
+            state.ui ||= {}
+            state.ui.lockPan = true
+
             historyBegin('move-entry-door')
 
             doorEdit = {
@@ -322,6 +340,10 @@ export const DrawTemplate = {
         function stopDoorDrag() {
             if (!doorEdit) return
             doorEdit = null
+
+            state.ui ||= {}
+            state.ui.lockPan = false
+
             historyEnd()
         }
 
@@ -796,9 +818,12 @@ export const DrawTemplate = {
 
             historyBegin(kind)
 
+            state.ui ||= {}
+            state.ui.lockPan = true
+
             capitalEdit = {
                 id: wallId,
-                kind, // 'move' | 'a' | 'b'
+                kind,
                 startMouse: { ...mouseWorld },
                 startA: { ...w.a },
                 startB: { ...w.b },
@@ -863,9 +888,12 @@ export const DrawTemplate = {
         function stopCapitalEdit() {
             if (!capitalEdit) return
             capitalEdit = null
+
+            state.ui ||= {}
+            state.ui.lockPan = false
+
             historyEnd()
         }
-
 
         /////
 
@@ -1112,6 +1140,8 @@ export const DrawTemplate = {
             state.previewWall = null
             state.snapPoint = null
             state.mode = 'idle'
+            state.ui ||= {}
+            state.ui.lockPan = false
 
             syncUI()
             rerender()
@@ -1517,6 +1547,9 @@ export const DrawTemplate = {
             state.hoverDoorId = null
             state.hoverFurnitureId = null
 
+            state.ui ||= {}
+            state.ui.lockPan = false
+
             cancelCapitalDraft()
             rerender()
         }
@@ -1633,5 +1666,6 @@ export const DrawTemplate = {
             URL.revokeObjectURL(url)
         }
         window.state = state
+        initViewport(draw)
     }
 }
