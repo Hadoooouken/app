@@ -515,6 +515,37 @@ export function render(draw) {
             opacity: 0.95,
           })
         }
+
+        // resize handles только для обычных окон
+        if (isWindowSelected && canEditDrawWindows && win.kind === 'std') {
+          const handleR = 8 * invScale
+          const hitR = 16 * invScale
+
+          for (const item of [
+            { p: q1, handle: 'start' },
+            { p: q2, handle: 'end' },
+          ]) {
+            overlayG
+              .circle(handleR * 2)
+              .center(item.p.x, item.p.y)
+              .fill('#fff')
+              .stroke({
+                width: 2 * invScale,
+                color: config.theme.wall.selected,
+              })
+              .attr({ 'pointer-events': 'none' })
+
+            overlayG
+              .circle(hitR * 2)
+              .center(item.p.x, item.p.y)
+              .fill({ color: '#000', opacity: 0 })
+              .attr({
+                'pointer-events': 'all',
+                'data-window-id': win.id,
+                'data-window-handle': item.handle,
+              })
+          }
+        }
       }
     }
   }

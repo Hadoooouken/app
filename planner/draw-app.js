@@ -120,34 +120,96 @@ export const DrawTemplate = {
             return (state.windows || []).find(w => w.id === id) || null
         }
 
-        function startWindowDrag(windowId) {
+        function findWindowHandleFromEventTarget(target) {
+            let el = target
+            while (el && el !== draw.node) {
+                if (el.getAttribute) {
+                    const id = el.getAttribute('data-window-id')
+                    const handle = el.getAttribute('data-window-handle')
+                    if (id && handle) return { id, handle }
+                }
+                el = el.parentNode
+            }
+            return null
+        }
+
+        function getWindowById(id) {
+            return (state.windows || []).find(w => w.id === id) || null
+        }
+
+        function startWindowEdit(windowId, kind, mouseWorld) {
             const win = getWindowById(windowId)
-            if (!isDraggableTemplateWindow(win)) return
+            if (!win) return
 
             const wall = (state.walls || []).find(w => w.id === win.wallId)
             if (!wall || wall.kind !== 'capital') return
 
-            historyBegin('move-window')
+            // resize только для обычных окон
+            if ((kind === 'start' || kind === 'end') && win.kind !== 'std') return
+
+            historyBegin(kind === 'move' ? 'move-window' : 'resize-window')
 
             windowEdit = {
                 id: windowId,
                 wallId: wall.id,
+                kind, // 'move' | 'start' | 'end'
+                startMouse: { ...mouseWorld },
+                startT: win.t,
+                startW: win.w,
             }
         }
 
-        function applyWindowDrag(mouseWorld) {
+        function applyWindowEdit(mouseWorld) {
             if (!windowEdit) return
 
             const win = getWindowById(windowEdit.id)
-            if (!isDraggableTemplateWindow(win)) return
+            if (!win) return
 
-            const wall = (state.walls || []).find(w => w.id === win.wallId)
+            const wall = (state.walls || []).find(w => w.id === windowEdit.wallId)
             if (!wall || wall.kind !== 'capital') return
 
+            const dx = wall.b.x - wall.a.x
+            const dy = wall.b.y - wall.a.y
+            const len = Math.hypot(dx, dy) || 1
+
             const pr = projectPointToSegmentClamped(mouseWorld, wall.a, wall.b)
-            win.t = clampOpeningTToWall(pr.t, win.w, wall)
+
+            if (windowEdit.kind === 'move') {
+                win.t = clampOpeningTToWall(pr.t, win.w, wall)
+                return
+            }
+
+            // resize только обычных окон
+            if (win.kind !== 'std') return
+
+            const minW = config.windows.minW ?? 40
+
+            const startW = windowEdit.startW ?? win.w ?? (config.windows.defaultW ?? 100)
+            const startT = windowEdit.startT ?? 0.5
+
+            const centerS = startT * len
+            const half = startW / 2
+
+            let s1 = centerS - half
+            let s2 = centerS + half
+            const sDrag = Math.max(0, Math.min(len, pr.t * len))
+
+            if (windowEdit.kind === 'start') {
+                s1 = Math.max(0, Math.min(sDrag, s2 - minW))
+            }
+
+            if (windowEdit.kind === 'end') {
+                s2 = Math.min(len, Math.max(sDrag, s1 + minW))
+            }
+
+            const newW = s2 - s1
+            const newCenter = (s1 + s2) / 2
+
+            win.w = newW
+            win.t = clampOpeningTToWall(newCenter / len, newW, wall)
         }
-        function stopWindowDrag() {
+
+        function stopWindowEdit() {
             if (!windowEdit) return
             windowEdit = null
             historyEnd()
@@ -251,7 +313,7 @@ export const DrawTemplate = {
             }
 
             if (editorMode !== 'build' && windowEdit) {
-                applyWindowDrag(raw)
+                applyWindowEdit(raw)
                 rerender()
                 return
             }
@@ -304,18 +366,24 @@ export const DrawTemplate = {
                     return
                 }
 
+                const windowHandleHit = findWindowHandleFromEventTarget(e.target)
+                if (windowHandleHit) {
+                    state.selectedWindowId = windowHandleHit.id
+                    state.selectedFurnitureId = null
+                    state.selectedWallId = null
+
+                    startWindowEdit(windowHandleHit.id, windowHandleHit.handle, raw)
+                    rerender()
+                    return
+                }
+
                 const windowId = findWindowIdFromEventTarget(e.target)
                 if (windowId) {
-                    const win = getWindowById(windowId)
-
                     state.selectedWindowId = windowId
                     state.selectedFurnitureId = null
                     state.selectedWallId = null
 
-                    if (isDraggableTemplateWindow(win)) {
-                        startWindowDrag(windowId)
-                    }
-
+                    startWindowEdit(windowId, 'move', raw)
                     rerender()
                     return
                 }
@@ -394,7 +462,7 @@ export const DrawTemplate = {
             }
 
             if (windowEdit) {
-                stopWindowDrag()
+                stopWindowEdit()
                 rerender()
                 return
             }
@@ -414,7 +482,7 @@ export const DrawTemplate = {
             }
 
             if (windowEdit) {
-                stopWindowDrag()
+                stopWindowEdit()
                 rerender()
                 return
             }
